@@ -22,8 +22,7 @@ library(sfnetworks)
 
 ```{r}
 nepal_rivers <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nepal_rivers_3up.rds") 
-nepal_current_dams <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nepal_current_dams.rds") %>% 
-  rename(dam_id = grand_id)
+nepal_current_dams <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nepal_current_dams.rds")
 nepal_future_dams <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nepal_future_dams.rds") 
 
 ```
@@ -91,10 +90,11 @@ nepal_future_dams <- nepal_future_dams %>%
 ```{r}
 # (1) combine future and current dam dfs
 nepal_current_dams <- nepal_current_dams %>% 
-  select(hybas_id, next_down, next_sink, main_bas, dist_sink, dist_main, sub_area, up_area, pfaf_id, endo, coast, order, sort, dam_id, geometry, is_current_dam) 
+  select(grand_id, is_current_dam) %>% 
+  rename(dam_id= grand_id) 
 
 nepal_future_dams <- nepal_future_dams %>% 
-  select(hybas_id, next_down, next_sink, main_bas, dist_sink, dist_main, sub_area, up_area, pfaf_id, endo, coast, order, sort, dam_id, geometry, is_current_dam)
+  select(dam_id, is_current_dam)
 
 all_dams <- rbind(nepal_current_dams, nepal_future_dams)
 
