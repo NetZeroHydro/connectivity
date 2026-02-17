@@ -1,0 +1,275 @@
+---
+title: "connectivity_df"
+format: html
+---
+
+```{r}
+#| output: false 
+library(sf)
+library(tidygraph)
+library(dplyr)
+library(purrr)
+library(TSP)
+library(tmap)
+library(igraph)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(renv)
+library(sfnetworks)
+
+```
+
+```{r}
+nepal_rivers <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nepal_rivers_3up.rds") 
+nepal_current_dams <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nepal_current_dams.rds") %>% 
+  rename(dam_id = grand_id)
+nepal_future_dams <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nepal_future_dams.rds") 
+
+```
+
+Change `nepal_rivers` to 'LINESTRING'
+```{r}
+# Change MULTISTRINGS TO LINESTRING (for sfnetwork)
+nepal_rivers <- st_cast(nepal_rivers , "LINESTRING")
+
+```
+
+## Convert Nepal River network to sfnetwork
+
+```{r}
+net <- as_sfnetwork(nepal_rivers, direction = TRUE) %>% # convert river geom into spatial network
+  tidygraph::activate("edges") %>%  # "Next operation applied to edges table (not node table)"
+  mutate(weight = edge_length()) # calculate spatial length of each edge (river segment)
+         
+
+net_df <- as_tibble(net) # makes sfnetwork a df 
+
+# Look at net  
+plot(net, col = "blue", main = "Base R Plot of net from nepal_rivers")
+```
+
+
+Checking CRS and geometry names
+
+```{r}
+# Check CRS 
+#st_crs(nepal_current_dams) # EPSG",4326
+#st_crs(nepal_rivers) # "EPSG",4326 
+#st_crs(net) # WGS 84 / EPSG",4326
+
+st_crs(nepal_current_dams) == st_crs(nepal_rivers) # TRUE 
+st_crs(nepal_current_dams) == st_crs(net) # TRUE 
+
+# Change shape geometry to `geometry` 
+nepal_rivers <- st_set_geometry(nepal_rivers, "geometry") 
+
+```
+
+```{r}
+# `nepal_current_dams` is polygons. Need to be points 
+nepal_current_dams <- st_point_on_surface(nepal_current_dams)
+
+# before blending, mark which nodes are dams 
+nepal_current_dams <- nepal_current_dams %>% 
+  mutate(is_current_dam = TRUE)
+
+nepal_future_dams <- nepal_future_dams %>% 
+  mutate(is_current_dam = FALSE)
+
+
+```
+
+# Snapping dams and creating nodes
+
+`st_network_blend()` does the heavy lifting: it finds the nearest edge for each dam point, snaps the point to it, and splits that edge into two new edges with a new node at the dam location.
+
+-   Blends a point into a network: process of (1) snapping given point in nearest edge in network (2) splitting edge at location (3) adding snapped point as node to network
+
+-   If location of snapped point is already a node, the attributes of point will be joined to the pre-existing node
+
+```{r}
+# (1) combine future and current dam dfs
+nepal_current_dams <- nepal_current_dams %>% 
+  select(hybas_id, next_down, next_sink, main_bas, dist_sink, dist_main, sub_area, up_area, pfaf_id, endo, coast, order, sort, dam_id, geometry, is_current_dam) 
+
+nepal_future_dams <- nepal_future_dams %>% 
+  select(hybas_id, next_down, next_sink, main_bas, dist_sink, dist_main, sub_area, up_area, pfaf_id, endo, coast, order, sort, dam_id, geometry, is_current_dam)
+
+all_dams <- rbind(nepal_current_dams, nepal_future_dams)
+
+
+# snapping and creating nodes of dams 
+net_with_dams <- net %>% 
+  st_network_blend(all_dams, tolerance = 1000)
+
+net_with_dams_df <- as_tibble(net_with_dams) # makes sfnetwork a df 
+
+
+# Plotting every line edge and juntion from net_with_dams
+ggplot() +
+  geom_sf(data = st_as_sf(net_with_dams, "nodes"), color = "red", size = 0.3) +
+  geom_sf(data = st_as_sf(net_with_dams, "edges"), color = "gray40", size = 0.3) +
+  theme_minimal() +
+  labs(title = "net_with_dams with ggplot2")
+
+
+```
+
+### Look at snapped dams that are now nodes
+
+```{r}
+
+# Which nodes are dams and making them a df 
+current_dam_nodes_sf <- net_with_dams %>% 
+  tidygraph::activate("nodes") %>% 
+  as_tibble() %>% 
+  filter(is_current_dam == TRUE) %>% 
+  st_as_sf()
+
+
+future_dam_nodes_sf <- net_with_dams %>% 
+  tidygraph::activate("nodes") %>% 
+  as_tibble() %>% 
+  filter(is_current_dam == FALSE) %>% 
+  st_as_sf()
+
+# Snapped 74 dam nodes (of the 80 `nepal_current_dams` obs) - thats good! 
+
+
+# Pulling `dam_id` dams that snapped to the river network 
+dam_id_snapped_dams <- net_with_dams %>%
+   tidygraph::activate("nodes") %>%
+   as_tibble() %>%
+   filter(is_current_dam == TRUE | is_current_dam == FALSE) %>%
+   pull(dam_id)
+
+
+# Plotting every line edge and juntion from net_with_dams
+ggplot() +
+  geom_sf(data = st_as_sf(net_with_dams, "edges"), color = "gray40", size = 0.2) +
+  geom_sf(data = st_as_sf(current_dam_nodes_sf, "nodes"), color = "red", size = 0.5) +
+  geom_sf(data = st_as_sf(future_dam_nodes_sf, "nodes"), color = "blue", size = 0.5) +
+  theme_minimal() +
+  labs(title = "Current dams that became nodes with ggplot2")
+
+```
+
+### Look at total dams numbers vs snapped dams numbers
+
+```{r}
+# all dams 
+length(nepal_current_dams$dam_id)
+length(nepal_future_dams$dam_id)
+
+
+# Dams that were snapped 
+length(dam_id_snapped_dams)
+
+```
+
+## Creating a **directional** / **un-directional** connectivity matrix
+
+```{r}
+
+# Getting the current dam node ID 
+current_dam_nodes <- net_with_dams %>% 
+  tidygraph::activate("nodes") %>% 
+  mutate(node_id = row_number()) %>% # create new column with node ID
+  as_tibble() %>% 
+  filter(is_current_dam == TRUE) %>% 
+  pull(node_id) # list of all dam nodes 
+
+# Getting the future dam node ID 
+future_dam_nodes <- net_with_dams %>% 
+  tidygraph::activate("nodes") %>% 
+  mutate(node_id = row_number()) %>% # create new column with node ID
+  as_tibble() %>% 
+  filter(is_current_dam == FALSE) %>% 
+  pull(node_id) # list of all dam nodes 
+
+# Create connective matrix 
+connectivity_matrix  <- distances(  # library(igraph) - calculates shortest path 
+  net_with_dams, 
+  v = current_dam_nodes, # starting nodes 
+  to = future_dam_nodes, # ending nodes - creates all pairwise combinations 
+  weights = tidygraph::activate(net_with_dams, "edges") %>% # use river segment lengths to calculate shortest path 
+  pull(weight), # extract the `weight` column
+  #mode = "out" # DIRECTIONAL CONNECTIVITY 
+  )
+
+connectivity_matrix
+
+```
+
+```{r}
+# Get dam nodes (current AND future)
+dam_nodes <- net_with_dams %>% 
+  tidygraph::activate("nodes") %>% # activate nodes 
+  mutate(node_id = row_number()) %>% # 
+  as_tibble() %>% 
+  filter(is_current_dam == TRUE | is_current_dam == FALSE) %>% 
+  pull(node_id)
+
+# Get dam_id for each dam node directly from network
+dam_ids <- net_with_dams %>%
+  tidygraph::activate("nodes") %>%
+  as_tibble() %>%
+  slice(dam_nodes) %>%
+  pull(dam_id)
+
+# Create dam labels using full grand_id
+dam_labels <- paste0("Dam_", dam_ids)
+
+# Get number of dams (rows/columns in symmetric matrix)
+n_dams <- nrow(connectivity_matrix)
+
+# Create row indices for upper triangle: repeat 1, then 1,1, then 1,1,1, etc.
+row_idx <- rep(1:(n_dams-1), times = (n_dams-1):1)
+
+# Create column indices for upper triangle: 2:n, then 3:n, then 4:n, etc.
+col_idx <- unlist(lapply(2:n_dams, function(i) i:n_dams))
+
+# Extract distance values from matrix using row/column index pairs
+distances <- connectivity_matrix[cbind(row_idx, col_idx)]
+
+# Create dataframe with columns: from dam, to dam, and distance
+reach_df <- data.frame(
+  from_dam = dam_labels[row_idx],           # Source dam label (hybas_id)
+  to_dam = dam_labels[col_idx],             # Destination dam label (hybas_id)
+  distance_m = distances,                   # Distance value in meters
+  stringsAsFactors = FALSE                  # Keep character columns as character
+)
+
+# Count pairs with zero distance (dams at same network node)
+zero_pairs <- sum(reach_df$distance_m == 0, na.rm = TRUE)
+
+# Count pairs with duplicate distances (same distance value appears multiple times)
+duplicate_distances <- sum(duplicated(reach_df$distance_m[reach_df$distance_m > 0]))
+
+# Filter out zeros (dams at same location) and NA/Inf values (unreachable pairs)
+reach_df <- reach_df[reach_df$distance_m > 0 & !is.na(reach_df$distance_m) & is.finite(reach_df$distance_m), ]
+
+# Sort dataframe by distance column (ascending order)
+reach_df <- reach_df[order(reach_df$distance_m), ]
+
+# Look at dataframe 
+head(reach_df)
+
+# Create histogram plot: x-axis is distance in km
+ggplot(reach_df, aes(x = distance_m / 1000)) +
+  # Add histogram bars with 30 bins, blue fill
+  geom_histogram(bins = 30, fill = "steelblue", alpha = 0.7) +
+  # Set axis labels and title
+  labs(
+    x = "Reach Distance (km)",              # X-axis label (convert m to km)
+    y = "Count",                            # Y-axis label (number of pairs)
+    title = "Distribution of Reach Distances Between Current Dams"  # Plot title (current dams only)
+  ) +
+  # Use minimal theme (clean, simple appearance)
+  theme_minimal()
+
+
+```
+
+
