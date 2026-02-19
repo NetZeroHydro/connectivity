@@ -1,0 +1,276 @@
+---
+title: "connectivity_df_luc"
+format: html
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r}
+#| output: false 
+library(sfnetworks)
+library(sf)
+library(tidygraph)
+library(dplyr)
+library(purrr)
+library(TSP)
+library(tmap)
+library(igraph)
+library(tidyverse)
+library(ggplot2)
+library(renv)
+library(sfnetworks)
+```
+
+# Load Data
+
+```{r}
+nepal_rivers <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nepal_rivers_3up.rds") 
+nepal_current_dams <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nepal_current_dams.rds") 
+nepal_future_dams <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nepal_future_dams.rds") 
+```
+
+# Standardize to dam_id and Check for Duplicates
+
+We are using `dam_id` which is equivalent to `grand_id`
+
+```{r}
+# Rename grand_id to dam_id
+nepal_current_dams <- nepal_current_dams %>% rename(dam_id = grand_id)
+
+# Check for duplicate dams between dam_id in current and future datasets
+any(nepal_current_dams$dam_id %in% nepal_future_dams$dam_id)
+
+```
+
+# Convert Rivers to LINESTRING
+
+```{r}
+# Convert MULTILINESTRING to LINESTRING (required for sfnetwork)
+nepal_rivers <- st_cast(nepal_rivers, "LINESTRING")
+```
+
+# Create River Network
+
+```{r}
+# Convert river geometry to directed spatial network
+net <- as_sfnetwork(nepal_rivers, directed = TRUE) %>%
+  activate("edges") %>% # "Next operation applied to edges table (not node table)"
+  mutate(weight = edge_length())  # Calculate length of each edge (river segment)
+
+#net_df <- as_tibble(net) # makes sfnetwork a df 
+
+# Look at net  
+#plot(net, col = "blue", main = "Base R Plot of net from nepal_rivers")
+```
+
+# Prepare Dams for Snapping
+
+```{r}
+# Check CRS match
+st_crs(nepal_current_dams) == st_crs(nepal_rivers)
+st_crs(nepal_future_dams) == st_crs(nepal_rivers)
+
+# Convert polygons to points (if needed)
+if (st_geometry_type(nepal_current_dams, by_geometry = FALSE) != "POINT") {
+  nepal_current_dams <- st_point_on_surface(nepal_current_dams)
+}
+
+# Before blending, mark which nodes are dams 
+nepal_current_dams <- nepal_current_dams %>% mutate(is_current_dam = TRUE)
+nepal_future_dams <- nepal_future_dams %>% mutate(is_current_dam = FALSE)
+
+# Store input counts to check if we lose any after snapping
+n_current_input <- nrow(nepal_current_dams)
+n_future_input <- nrow(nepal_future_dams)
+```
+
+# Snap Dams to River Network
+
+`st_network_blend()` does the heavy lifting: it finds the nearest edge for each dam point, snaps the point to it, and splits that edge into two new edges with a new node at the dam location.
+
+-   Blends a point into a network: process of (1) snapping given point in nearest edge in network (2) splitting edge at location (3) adding snapped point as node to network
+
+-   If location of snapped point is already a node, the attributes of point will be joined to the pre-existing node
+
+```{r}
+# Combine dams and snap to network (tolerance = 1000m)
+all_dams <- rbind(
+  nepal_current_dams %>% select(dam_id, is_current_dam), # Do we need to select here?
+  nepal_future_dams %>% select(dam_id, is_current_dam)
+)
+
+net_with_dams <- net %>% st_network_blend(all_dams, tolerance = 30000) # Raised until all dams were snapped
+
+# Check how many dams snapped
+dam_nodes_snapped <- net_with_dams %>%
+  activate("nodes") %>%
+  as_tibble() %>%
+  filter(!is.na(is_current_dam)) %>%
+  pull(dam_id)
+
+n_current_snapped <- sum(net_with_dams %>% activate("nodes") %>% as_tibble() %>% pull(is_current_dam) == TRUE, na.rm = TRUE)
+n_future_snapped <- sum(net_with_dams %>% activate("nodes") %>% as_tibble() %>% pull(is_current_dam) == FALSE, na.rm = TRUE)
+
+cat("=== Dam Snapping Summary ===\n")
+cat("Current: Input", n_current_input, "| Snapped", n_current_snapped, "\n")
+cat("Future: Input", n_future_input, "| Snapped", n_future_snapped, "\n")
+
+# Check which dams didn't snap
+current_dams_missing <- setdiff(nepal_current_dams$dam_id, dam_nodes_snapped)
+future_dams_missing <- setdiff(nepal_future_dams$dam_id, dam_nodes_snapped)
+
+if (length(current_dams_missing) > 0) cat("Current dams not snapped:", length(current_dams_missing), "\n")
+if (length(future_dams_missing) > 0) cat("Future dams not snapped:", length(future_dams_missing), "\n")
+```
+
+# Get Dam Node IDs
+
+```{r}
+# Get node IDs for current and future dams (Not sf)
+current_dam_nodes <- net_with_dams %>%
+  activate("nodes") %>%
+  mutate(node_id = row_number()) %>%
+  as_tibble() %>%
+  filter(is_current_dam == TRUE) %>%
+  pull(node_id)
+
+future_dam_nodes <- net_with_dams %>%
+  activate("nodes") %>%
+  mutate(node_id = row_number()) %>%
+  as_tibble() %>%
+  filter(is_current_dam == FALSE) %>%
+  pull(node_id)
+
+# Create sf objects from network nodes
+current_dam_nodes_sf <- net_with_dams %>%
+  activate("nodes") %>%
+  filter(is_current_dam == TRUE) %>%
+  st_as_sf()
+
+future_dam_nodes_sf <- net_with_dams %>%
+  activate("nodes") %>%
+  filter(is_current_dam == FALSE) %>%
+  st_as_sf()
+
+# Plotting every line edge and junction from net_with_dams
+ggplot() +
+  geom_sf(data = st_as_sf(net_with_dams, "edges"), color = "gray40", size = 0.2) +
+  geom_sf(data = current_dam_nodes_sf, color = "red", size = 0.5) +
+  geom_sf(data = future_dam_nodes_sf, color = "blue", size = 0.5) +
+  theme_minimal() +
+  labs(title = "Current dams (red) and Future dams (blue) that became nodes")
+
+```
+
+
+# Create Directional Connectivity Matrices
+
+```{r}
+# Matrix 1: Current dams TO Future dams (downstream)
+# mode = "out" means travel only in edge direction (downstream)
+connectivity_matrix_downstream <- distances(
+  net_with_dams,
+  v = current_dam_nodes,
+  to = future_dam_nodes,
+  weights = activate(net_with_dams, "edges") %>% pull(weight),
+  mode = "out"
+)
+
+# Matrix 2: Future dams TO Current dams (upstream)
+# If reachable, future dam is upstream of current dam
+connectivity_matrix_upstream <- distances(
+  net_with_dams,
+  v = future_dam_nodes,
+  to = current_dam_nodes,
+  weights = activate(net_with_dams, "edges") %>% pull(weight),
+  mode = "out"
+)
+```
+
+# Extract Distances and Create Final Dataframe
+
+```{r}
+# Get dam_id for each dam node
+current_dam_ids <- net_with_dams %>%
+  activate("nodes") %>%
+  as_tibble() %>%
+  slice(current_dam_nodes) %>%
+  pull(dam_id)
+
+future_dam_ids <- net_with_dams %>%
+  activate("nodes") %>%
+  as_tibble() %>%
+  slice(future_dam_nodes) %>%
+  pull(dam_id)
+
+# Create dataframe with one row per future dam
+reach_df <- data.frame(
+  dam_id = future_dam_ids,
+  dam_type = "future",
+  stringsAsFactors = FALSE
+)
+
+# Check if future dam has current dams downstream (any finite distance in downstream matrix column)
+has_current_downstream <- apply(connectivity_matrix_downstream, 2, function(x) any(is.finite(x) & x > 0))
+
+# Check if future dam has current dams upstream (any finite distance in upstream matrix row)
+has_current_upstream <- apply(connectivity_matrix_upstream, 1, function(x) any(is.finite(x) & x > 0))
+
+# Minimum distance to nearest downstream current dam (NA if none)
+min_distance_downstream_m <- apply(connectivity_matrix_downstream, 2, function(x) {
+  finite_distances <- x[is.finite(x) & x > 0]
+  if (length(finite_distances) > 0) min(finite_distances) else NA_real_
+})
+
+# Minimum distance to nearest upstream current dam (NA if none)
+min_distance_upstream_m <- apply(connectivity_matrix_upstream, 1, function(x) {
+  finite_distances <- x[is.finite(x) & x > 0]
+  if (length(finite_distances) > 0) min(finite_distances) else NA_real_
+})
+
+# Add columns to dataframe
+reach_df$has_current_upstream <- has_current_upstream
+reach_df$has_current_downstream <- has_current_downstream
+reach_df$min_distance_upstream_m <- min_distance_upstream_m
+reach_df$min_distance_downstream_m <- min_distance_downstream_m
+
+# Cascade status: has both upstream AND downstream current dams
+reach_df$cascade_status <- ifelse(
+  reach_df$has_current_upstream & reach_df$has_current_downstream,
+  "cascade",
+  "not in cascade"
+)
+
+# Sort by cascade status, then distances
+reach_df <- reach_df %>%
+  arrange(cascade_status, min_distance_upstream_m, min_distance_downstream_m)
+
+cat("\n=== Cascade Status Summary ===\n")
+print(table(reach_df$cascade_status))
+```
+
+# Verify All Future Dams Are in DataFrame
+
+```{r}
+future_dams_missing_from_df <- setdiff(future_dam_ids, reach_df$dam_id)
+cat("Future dams in network:", length(future_dam_ids), "\n")
+cat("Future dams in dataframe:", nrow(reach_df), "\n")
+if (length(future_dams_missing_from_df) > 0) {
+  cat("Future dams missing from dataframe:", length(future_dams_missing_from_df), "\n")
+}
+```
+
+# View Results
+
+```{r}
+head(reach_df, 20)
+
+reach_df %>%
+  group_by(cascade_status) %>%
+  summarise(
+    count = n(),
+    mean_upstream_km = mean(min_distance_upstream_m / 1000, na.rm = TRUE),
+    mean_downstream_km = mean(min_distance_downstream_m / 1000, na.rm = TRUE)
+  )
+```
+
