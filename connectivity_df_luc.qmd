@@ -164,6 +164,9 @@ ggplot() +
 
 
 # Create Directional Connectivity Matrices
+This checks each future dam to current dams distance in one direction, downstream. 
+But it flips current and future so the second one is checking future dams above current dams, 
+and the first is checking future dams below current dams. 
 
 ```{r}
 # Matrix 1: Current dams TO Future dams (downstream)
@@ -177,7 +180,6 @@ connectivity_matrix_downstream <- distances(
 )
 
 # Matrix 2: Future dams TO Current dams (upstream)
-# If reachable, future dam is upstream of current dam
 connectivity_matrix_upstream <- distances(
   net_with_dams,
   v = future_dam_nodes,
@@ -210,22 +212,51 @@ reach_df <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# Check if future dam has current dams downstream (any finite distance in downstream matrix column)
-has_current_downstream <- apply(connectivity_matrix_downstream, 2, function(x) any(is.finite(x) & x > 0))
+# THIS COULD BE MADE A FUNCTION? (BELOW)
 
-# Check if future dam has current dams upstream (any finite distance in upstream matrix row)
-has_current_upstream <- apply(connectivity_matrix_upstream, 1, function(x) any(is.finite(x) & x > 0))
+# Check downstream connectivity
+# For each future dam (each column), check if ANY current dam can reach it downstream
 
-# Minimum distance to nearest downstream current dam (NA if none)
-min_distance_downstream_m <- apply(connectivity_matrix_downstream, 2, function(x) {
-  finite_distances <- x[is.finite(x) & x > 0]
-  if (length(finite_distances) > 0) min(finite_distances) else NA_real_
+has_current_downstream <- apply(connectivity_matrix_downstream, 
+                                2, # apply(..., 2, ...) = apply function to each COLUMN (each future dam)
+                                function(x) {  # x = one column = distances from all current dams to this one future dam
+                                any(is.finite(x) & x > 0)  # Check if any of these distances are finite (not Inf) and positive (> 0)
 })
 
-# Minimum distance to nearest upstream current dam (NA if none)
-min_distance_upstream_m <- apply(connectivity_matrix_upstream, 1, function(x) {
-  finite_distances <- x[is.finite(x) & x > 0]
-  if (length(finite_distances) > 0) min(finite_distances) else NA_real_
+# Check downstream connectivity
+# For each future dam (each row), check if it can reach ANY current dam downstream
+has_current_upstream <- apply(connectivity_matrix_upstream, 
+                              1,# apply(..., 1, ...) = apply function to each ROW (each future dam)
+                              function(x) {    # x = one row = distances from this future dam to all current dams
+                              any(is.finite(x) & x > 0)   # Check if any of these distances are finite (not Inf) and positive (> 0)
+})
+
+# Calculate minimum distances
+# For each future dam, find the CLOSEST current dam DOWNSTREAM
+
+min_distance_downstream_m <- apply(connectivity_matrix_downstream, 
+                                   2, # apply(..., 2, ...) = apply to each COLUMN (each future dam)
+                                   function(x) { # x = one column = distances from all current dams to this future dam
+  finite_distances <- x[is.finite(x) & x > 0] # Filter to only finite, positive distances (actual connections)
+  # If any connections exist, return minimum distance; otherwise return NA
+  if (length(finite_distances) > 0) {
+    min(finite_distances)  # Closest downstream current dam
+  } else {
+    NA_real_  # No downstream current dams
+  }
+})
+
+# For each future dam, find the CLOSEST current dam UPSTREAM
+min_distance_upstream_m <- apply(connectivity_matrix_upstream, 
+                                 1, # apply(..., 1, ...) = apply to each ROW (each future dam)
+                                 function(x) {   # x = one row = distances from this future dam to all current dams
+  finite_distances <- x[is.finite(x) & x > 0]  # Filter to only finite, positive distances (actual connections)
+  # If any connections exist, return minimum distance; otherwise return NA
+  if (length(finite_distances) > 0) {
+    min(finite_distances)  # Closest upstream current dam
+  } else {
+    NA_real_  # No upstream current dams
+  }
 })
 
 # Add columns to dataframe
