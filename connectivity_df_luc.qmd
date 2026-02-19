@@ -141,7 +141,7 @@ future_dam_nodes <- net_with_dams %>%
   filter(is_current_dam == FALSE) %>%
   pull(node_id)
 
-# Create sf objects from network nodes
+# Create sf objects from network nodes (for plot)
 current_dam_nodes_sf <- net_with_dams %>%
   activate("nodes") %>%
   filter(is_current_dam == TRUE) %>%
