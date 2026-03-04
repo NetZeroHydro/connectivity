@@ -94,8 +94,10 @@ connectivity_from_network <- function(net_with_dams,
   # ---------------------------------------------------------------------------
   nodes <- net_with_dams %>%
     activate("nodes") %>%
-    mutate(node_id = row_number()) %>%
-    as_tibble()
+    st_as_sf() %>%           # ensure sf
+    st_drop_geometry() %>%   # drop geometry & sf class
+    as_tibble() %>%
+    mutate(node_id = row_number())
   
   current_dam_nodes <- nodes %>%
     filter(is_current_dam %in% TRUE) %>%
@@ -104,6 +106,61 @@ connectivity_from_network <- function(net_with_dams,
   future_dam_nodes <- nodes %>%
     filter(is_current_dam %in% FALSE) %>%
     pull(node_id)
+  
+  # ---------------------------------------------------------------------------
+  # Optional: restrict to future dams inside a sub-basin BEFORE computing
+  # distance matrices (smaller matrices, faster for large basins)
+  # ---------------------------------------------------------------------------
+  subbasin_poly <- NULL
+  if (!is.null(subbasin)) {
+    subbasin_poly <- subbasin
+  } else if (!is.null(hybas_id)) {
+    if (is.null(basins_sf)) {
+      stop("When using hybas_id, you must also provide basins_sf.", call. = FALSE)
+    }
+    subbasin_poly <- basins_sf %>% dplyr::filter(hybas_id == !!hybas_id)
+    if (nrow(subbasin_poly) == 0L) {
+      stop("No polygon found in basins_sf for hybas_id = ", hybas_id, ".", call. = FALSE)
+    }
+  }
+  
+  if (!is.null(subbasin_poly)) {
+    # Future dam node geometries (order aligned with future_dam_nodes)
+    future_dam_nodes_sf <- net_with_dams %>%
+      activate("nodes") %>%
+      dplyr::filter(is_current_dam %in% FALSE) %>%
+      st_as_sf()
+    
+    # Use geometry (sfc) not full sf so st_filter works in all sf versions
+    dam_ids_in_subbasin <- future_dam_nodes_sf %>%
+      st_filter(st_geometry(subbasin_poly), .predicate = st_intersects) %>%
+      dplyr::pull(dam_id)
+    
+    keep_idx <- which(future_dam_nodes_sf$dam_id %in% dam_ids_in_subbasin)
+    future_dam_nodes <- future_dam_nodes[keep_idx]
+    
+    # If no future dams fall in the sub-basin, return empty result early
+    if (length(future_dam_nodes) == 0L) {
+      reach_df <- data.frame(
+        dam_id = character(),
+        dam_type = "future",
+        has_current_upstream = logical(),
+        has_current_downstream = logical(),
+        min_distance_upstream_km = numeric(),
+        min_distance_downstream_km = numeric(),
+        cascade_status = character(),
+        stringsAsFactors = FALSE
+      )
+      if (return_matrices) {
+        return(list(
+          reach_df = reach_df,
+          connectivity_matrix_downstream = NULL,
+          connectivity_matrix_upstream = NULL
+        ))
+      }
+      return(reach_df)
+    }
+  }
   
   # ---------------------------------------------------------------------------
   # Edge weights are usually produced by edge_length() / st_length().
@@ -230,6 +287,8 @@ connectivity_from_network <- function(net_with_dams,
   if (isTRUE(same_trunk_only)) {
     edges_tbl <- net_with_dams %>%
       activate("edges") %>%
+      st_as_sf() %>%
+      st_drop_geometry() %>%
       as_tibble()
     
     if (!"bb_id" %in% names(edges_tbl)) {
@@ -325,42 +384,6 @@ connectivity_from_network <- function(net_with_dams,
   # Sort by cascade status, then distances (match connectivity_df)
   reach_df <- reach_df %>%
     arrange(cascade_status, min_distance_upstream_km, min_distance_downstream_km)
-  
-  # ---------------------------------------------------------------------------
-  # Optional: filter to sub-basin (full area by default)
-  # ---------------------------------------------------------------------------
-  subbasin_poly <- NULL
-  if (!is.null(subbasin)) {
-    subbasin_poly <- subbasin
-  } else if (!is.null(hybas_id)) {
-    if (is.null(basins_sf)) {
-      stop("When using hybas_id, you must also provide basins_sf.", call. = FALSE)
-    }
-    subbasin_poly <- basins_sf %>% filter(hybas_id == !!hybas_id)
-    if (nrow(subbasin_poly) == 0L) {
-      stop("No polygon found in basins_sf for hybas_id = ", hybas_id, ".", call. = FALSE)
-    }
-  }
-  
-  if (!is.null(subbasin_poly)) {
-    # Future dam node geometries (for spatial filter)
-    future_dam_nodes_sf <- net_with_dams %>%
-      activate("nodes") %>%
-      filter(is_current_dam %in% FALSE) %>%
-      st_as_sf()
-    
-    dam_ids_in_subbasin <- future_dam_nodes_sf %>%
-      st_filter(subbasin_poly, .predicate = st_intersects) %>%
-      pull(dam_id)
-    
-    keep_idx <- which(future_dam_ids %in% dam_ids_in_subbasin)
-    reach_df <- reach_df %>% filter(dam_id %in% dam_ids_in_subbasin)
-    
-    if (return_matrices) {
-      connectivity_matrix_downstream <- connectivity_matrix_downstream[, keep_idx, drop = FALSE]
-      connectivity_matrix_upstream <- connectivity_matrix_upstream[keep_idx, , drop = FALSE]
-    }
-  }
   
   # ---------------------------------------------------------------------------
   # Return
