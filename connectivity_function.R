@@ -322,6 +322,8 @@ connectivity_from_network <- function(net_with_dams,
       slice(future_dam_nodes) %>%
       pull(trunk_id)
     
+    reach_df$future_trunk <- future_trunk
+    
     n_future <- length(future_dam_nodes)
     
     has_current_downstream_same <- logical(n_future)
