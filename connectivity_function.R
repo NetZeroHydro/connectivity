@@ -302,9 +302,9 @@ connectivity_from_network <- function(net_with_dams,
     
     # Derive a trunk id per node from incident edges
     incident_from <- edges_tbl %>%
-      select(node_id = from, bb_id)
+      dplyr::select(node_id = from, bb_id)
     incident_to <- edges_tbl %>%
-      select(node_id = to, bb_id)
+      dplyr::select(node_id = to, bb_id)
     
     incident <- bind_rows(incident_from, incident_to) %>%
       filter(!is.na(bb_id)) %>%
