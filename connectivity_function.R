@@ -25,23 +25,29 @@
 #'   and blended with dam points. Must have node columns `dam_id` and
 #'   `is_current_dam` (TRUE = current, FALSE = future) and an edge column
 #'   `weight` (typically metres from `edge_length()`).
+#'   
 #' @param cascade_threshold_km Optional numeric. If set, a future dam is
 #'   `"cascade"` only if the nearest-current upstream *and* downstream distances
 #'   are both `<= cascade_threshold_km` (km). If NULL, any upstream + any
 #'   downstream counts as cascade.
+#'   
 #' @param same_trunk_only Logical. If TRUE, upstream/downstream connections and
 #'   distances are restricted to current dams on the same trunk as each future
 #'   dam. Trunks are identified by an edge column `bb_id` in `net_with_dams`
 #'   (e.g. HydroROUT backbone IDs). Default TRUE = restrict connectivity and
 #'   cascades to the same trunk; set to FALSE to use the full network regardless
 #'   of trunk.
+#'   
 #' @param return_matrices Logical. If TRUE, return a list with `reach_df` plus
 #'   the upstream/downstream distance matrices; otherwise return only `reach_df`.
+#'   
 #' @param subbasin Optional sf polygon. If provided, only future dams inside this
 #'   polygon are included in the output. Default NULL = full network (no filter).
+#'   
 #' @param hybas_id Optional scalar (numeric or character). HydroBASINS sub-basin
 #'   ID. When provided with `basins_sf`, restricts output to future dams inside
 #'   that sub-basin (uses `basins_sf %>% filter(hybas_id == hybas_id)`).
+#'   
 #' @param basins_sf Optional sf object with HydroBASINS polygons and `hybas_id`
 #'   column. Required when using `hybas_id`; ignored otherwise.
 #'
