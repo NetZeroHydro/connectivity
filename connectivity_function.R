@@ -99,7 +99,7 @@ connectivity_from_network <- function(net_with_dams,
   # Get node table and identify current vs future dam node indices
   # ---------------------------------------------------------------------------
   nodes <- net_with_dams %>%
-    activate("nodes") %>%
+    tidygraph::activate("nodes") %>%
     st_as_sf() %>%           # ensure sf
     st_drop_geometry() %>%   # drop geometry & sf class
     as_tibble() %>%
@@ -133,7 +133,7 @@ connectivity_from_network <- function(net_with_dams,
   if (!is.null(subbasin_poly)) {
     # Future dam node geometries (order aligned with future_dam_nodes)
     future_dam_nodes_sf <- net_with_dams %>%
-      activate("nodes") %>%
+      tidygraph::activate("nodes") %>%
       dplyr::filter(is_current_dam %in% FALSE) %>%
       st_as_sf()
     
@@ -173,7 +173,7 @@ connectivity_from_network <- function(net_with_dams,
   # We convert to numeric kilometres for igraph::distances().
   # ---------------------------------------------------------------------------
   weights <- net_with_dams %>%
-    activate("edges") %>%
+    tidygraph::activate("edges") %>%
     pull(weight)
   
   weights_km <- tryCatch(
@@ -292,7 +292,7 @@ connectivity_from_network <- function(net_with_dams,
   # ---------------------------------------------------------------------------
   if (isTRUE(same_trunk_only)) {
     edges_tbl <- net_with_dams %>%
-      activate("edges") %>%
+      tidygraph::activate("edges") %>%
       st_as_sf() %>%
       st_drop_geometry() %>%
       as_tibble()
