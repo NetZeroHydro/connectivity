@@ -1,0 +1,186 @@
+---
+title: "Basin network + connectivity (demo)"
+format: html
+editor_options:
+  chunk_output_type: inline
+---
+
+1. `source()` connectivity_function.R and basin_network.R
+2. `net_with_dams_from_hydrobasin()` — **`continent`** (must match `world_rivers_ffr$continent`) plus **Strahler**, then **crop to the basin** so `st_filter` does not scan the whole global layer. **`future_dams`** is **`data.frame`** with **`lon_cleaned`** / **`lat_cleaned`**.
+3. `connectivity_from_network()` then `add_ffr_attr()` (`edge_attr_cols` = add FFR columns from river edges by `bb_id`; `future_extra` optional; `output_cols` = keep only listed columns). Map at the end.
+
+---
+
+```{r}
+#| label: setup
+#| output: false
+
+# Packages: spatial (sf), networks (sfnetworks, tidygraph, igraph), tables (dplyr),
+# plotting (ggplot2, ggnewscale), data IO (readr), name cleaning (janitor).
+library(sfnetworks)
+library(sf)
+library(tidygraph)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(janitor)
+library(igraph)
+library(ggnewscale)
+
+# Load the two scripts so their functions exist in this Quarto session.
+source("connectivity_function.R")
+source("basin_network.R")
+```
+
+```{r}
+#| label: load-data
+
+# Paths point to your project’s raw/cleaned data; adjust if your folder layout differs.
+current_dams <- read_sf("../../../../../capstone/netzerohydro/data/raw/GRanD_Version_1_3") |>
+  clean_names()
+
+# Table of future dam sites (lon/lat columns expected by net_with_dams_from_hydrobasin).
+future_dams <- read_csv("../../../../../capstone/netzerohydro/data/raw/FHReD_2015_future_dams/FHReD_2015_future_dams_Zarfl_et_al_beta_version.csv") |>
+  clean_names()
+
+# Hybas polygons for South America; level (e.g. lev04) must match hybas_id.
+basins_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_sa_lev01-12_v1c/hybas_sa_lev04_v1c.shp") |>
+  clean_names()
+
+# Global river + FFR attributes; must include continent, ord_stra, bb_id for the pipeline.
+world_rivers_ffr <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/world_rivers_ffr.rds")
+```
+
+```{r}
+#| label: build-network-and-connectivity
+
+# Build study network: one Hybas id, continent matches river layer, blend tolerance in metres.
+out <- net_with_dams_from_hydrobasin(
+  current_dams      = current_dams,
+  future_dams       = future_dams,
+  basins_sf         = basins_sf,
+  world_rivers_ffr  = world_rivers_ffr,
+  hybas_id          = 6040345000,
+  continent         = "South America",
+  ord_stra_min      = 3L,
+  blend_tolerance_m = 50000
+)
+
+# Per-dam connectivity and cascade labels; trunk_steps = 0 means same bb_id only.
+reach_df <- connectivity_from_network(
+  out$net_with_dams,
+  cascade_threshold_km = 500,
+  cascade_trunk_steps  = 0L
+)
+
+# --- reach_enriched ---
+# edge_attr_cols: pull these columns FROM RIVER EDGES (join on bb_id).
+# future_extra: optional dam-level table by dam_id; omit (NULL)
+# output_cols: only SELECT these names at the end (REACH_DF_OUTPUT_COLS = connectivity core).
+reach_output_cols <- c(
+  REACH_DF_OUTPUT_COLS,
+  "csi", "ord_stra", "bas_name"
+)
+
+reach_enriched <- add_ffr_attr(
+  out$net_with_dams,
+  reach_df,
+  edge_attr_cols = c("csi", "ord_stra", "bas_name"),
+  future_extra   = NULL,
+  output_cols    = reach_output_cols
+)
+
+head(reach_enriched)
+```
+
+```{r}
+#| label: map
+#| fig-width: 10
+#| fig-height: 7
+
+# Study basin outline (from HydroBASINS); hollow fill so rivers show through.
+one_subbasin <- out$basin_poly
+
+# Rivers colored by coarse trunk id: first 4 chars of bb_id group segments for legibility.
+rivers_one <- out$rivers_cropped %>%
+  dplyr::mutate(bb_id_prefix = substr(as.character(.data$bb_id), 1, 4))
+
+# Current dams as points (point-on-surface avoids odd multipoint geometries from intersect).
+dams_current_one <- if (nrow(out$dams_current_cropped) > 0L) {
+  sf::st_point_on_surface(out$dams_current_cropped)
+} else {
+  out$dams_current_cropped
+}
+
+# connectivity_from_network() appends current dams with NA cascade fields — map only future for cascade join.
+reach_future <- dplyr::filter(reach_df, .data$dam_type == "future")
+
+# Attach cascade label to cropped future dam sf for splitting plot layers.
+dams_fut <- out$dams_future_cropped %>%
+  dplyr::left_join(
+    dplyr::select(reach_future, dam_id, cascade_status),
+    by = "dam_id"
+  )
+
+# Split future dams: cascade vs not (for color emphasis on cascade only).
+dams_future_cascade <- dams_fut %>%
+  dplyr::filter(.data$cascade_status == "cascade")
+
+dams_future_other <- dams_fut %>%
+  dplyr::filter(is.na(.data$cascade_status) | .data$cascade_status != "cascade")
+
+# One color per cascade dam id (only build palette if any exist).
+cascade_ids <- unique(as.character(dams_future_cascade$dam_id))
+if (length(cascade_ids) > 0L) {
+  cascade_pal <- stats::setNames(
+    scales::hue_pal()(length(cascade_ids)),
+    cascade_ids
+  )
+} else {
+  cascade_pal <- character(0)
+}
+
+# Base plot: basin boundary, rivers (first color scale = bb_id prefix), current + non-cascade future in fixed colors.
+p <- ggplot() +
+  geom_sf(data = one_subbasin, fill = NA, color = "black", linewidth = 0.4) +
+  geom_sf(
+    data = rivers_one,
+    aes(color = as.factor(.data$bb_id_prefix)),
+    linewidth = 0.5,
+    inherit.aes = FALSE
+  ) +
+  scale_color_discrete(name = "bb_id (first 4 digits)") +
+  # Rivers already use color = bb_id; second dam layer needs its own color scale (ggnewscale).
+  ggnewscale::new_scale_color() +
+  geom_sf(data = dams_current_one, color = "red", size = 2) +
+  geom_sf(data = dams_future_other, color = "gray60", size = 2)
+
+# Overlay cascade future dams with distinct colors per dam_id (second scale_color_*).
+if (length(cascade_ids) > 0L) {
+  p <- p +
+    geom_sf(
+      data = dams_future_cascade,
+      aes(color = as.factor(.data$dam_id)),
+      size = 2.5,
+      inherit.aes = FALSE
+    ) +
+    scale_color_manual(
+      name = "Future dams (cascade)",
+      values = cascade_pal,
+      guide = guide_legend(override.aes = list(size = 3))
+    )
+}
+
+# Minimal map theme: hide axes (geographic context is the data layers).
+p +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank()
+  ) +
+  labs(
+    title = "Sub-basin: trunks by bb_id; future cascade dams by dam_id",
+    subtitle = "Red = current dams; gray = future not in cascade"
+  )
+```
