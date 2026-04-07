@@ -1,0 +1,125 @@
+---
+title: "wsm_function_testing"
+format: html
+---
+## Fake dataset 
+
+Building a fake dataset that I can predict the outcomes 
+```{r}
+dam_df <- data.frame(
+  dam_id = c("2001", "2002", "2003", "2004", "2005", "2006", "2007", "2008", "2009", "2010"), 
+  bb_id = c(1, 1, 1, 2, 2, 2, 3, 3, 4, 4), # trunk id 
+  min_distance_upstream_km = c(NA, 10, 30, NA, 3, NA, 30, 200, NA, 2),  
+  min_distance_downstream_km = c(20, 10, NA, NA, 15, 30, 100, 10, NA, 14), 
+  # connectivity indexes 
+  cascade_status = c(0,1,0,NA,1,0,0,0,NA,1), 
+  csi = c(0.40, 0.10, 0.22, 0.90, 0.12, 0.25, 0.81, 0.70, 0.95, 0.07),
+  # fatal flaws 
+  in_protected_area = c(0,1,1,0,0,1,1,1,0,0) # CHANGED to have 1 = good (no PA) and 0 = bad (inside PA)... WAS c(1,0,0,1,1,0,0,0,1,1) 
+)
+
+
+# upsteam, downstream, cascade 
+dam_df <- dam_df %>% 
+  mutate(connectivity_category = case_when(
+    min_distance_upstream_km <= 15 & min_distance_downstream_km <= 15 ~ "cascade", 
+    is.na(min_distance_upstream_km) & is.na(min_distance_downstream_km) ~ "FFR",
+    is.na(min_distance_upstream_km) & min_distance_downstream_km <= 50 | 
+      min_distance_upstream_km > 50 & min_distance_downstream_km <= 50 ~ "upstream", 
+    min_distance_upstream_km <= 50 & is.na(min_distance_downstream_km) | 
+      min_distance_upstream_km <= 50 & min_distance_downstream_km > 50 ~ "downstream", 
+    TRUE ~ NA
+  ))
+
+
+# Change the connectivity_category to numbers 
+dam_df <- dam_df %>% 
+  mutate(connectivity_category_num  = case_when(
+    connectivity_category == "cascade" ~ 5, 
+    connectivity_category == "upstream" ~ 3, 
+    connectivity_category == "downstream" ~ 3, 
+    connectivity_category == "ffr" ~ 1, 
+    TRUE ~ 1
+    ))
+
+
+dam_df
+
+```
+
+Trying function on fake data 
+```{r}
+
+criteria <- c("csi", "connectivity_category_num", "in_protected_area")
+
+criteria_weights <- c(csi = 0.5, connectivity_category_num = 0.3, in_protected_area = 0.2)
+
+criteria_type <- c(csi = "nonbeneficial", connectivity_category_num = "beneficial", in_protected_area = "beneficial")
+
+
+wsm_function(dataset = dam_df, 
+     criteria = criteria, 
+     criteria_weights = criteria_weights, 
+     criteria_type = criteria_type)
+```
+
+
+## Real dataset 
+
+`reach_df_one` from trunk_id_exploration 
+
+`future_dams_flagged` from fatal-flaws -> protected areas
+
+```{r}
+# --- JOINING dam data to PA data ---  
+
+# future_dams_flagged <- future_dams_flagged %>% st_drop_geometry()
+# future_dams_flagged$dam_id <- as.character(future_dams_flagged$dam_id)
+join <- left_join(reach_df_one, future_dams_flagged, by = 'dam_id')
+
+
+# --- Adding a connectivity catagory ---
+join_trial <- join %>%
+  mutate(connectivity_category = case_when(
+    
+    # (1) Both within 250km
+    min_distance_upstream_km <= 50 & min_distance_downstream_km <= 50 ~ "cascade",
+    
+    # (2) No dams in either direction OR both further than 200km
+    (is.na(min_distance_upstream_km) | min_distance_upstream_km > 200) &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 200) ~ "FFR",
+    
+    # (3) Upstream dam within 200km, no downstream or downstream > 200km
+    min_distance_upstream_km <= 200 &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 200) ~ "downstream",
+    
+    # (4) Downstream dam within 200km, no upstream or upstream > 200km
+    min_distance_downstream_km <= 200 &
+      (is.na(min_distance_upstream_km) | min_distance_upstream_km > 200) ~ "upstream",
+    
+    TRUE ~ NA
+  ))
+
+
+# Change the connectivity_category to numbers 
+join_trial <- join_trial %>% 
+  mutate(connectivity_category_num  = case_when(
+    connectivity_category == "cascade" ~ 5, 
+    connectivity_category == "upstream" ~ 3, 
+    connectivity_category == "downstream" ~ 3, 
+    connectivity_category == "FFR" ~ 1, 
+    TRUE ~ 1
+    ))
+
+```
+
+Using the function 
+```{r}
+
+wsm_function(dataset = join_trial, 
+     criteria = c('csi', 'connectivity_category_num', 'n_protected_areas'), 
+     criteria_weights = c(csi = 0.5, connectivity_category_num = 0.3, n_protected_areas = 0.2),
+     criteria_type = c(csi = "nonbeneficial", connectivity_category_num = "beneficial", n_protected_areas = "beneficial"))
+
+```
+
