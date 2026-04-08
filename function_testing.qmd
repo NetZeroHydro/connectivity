@@ -27,32 +27,70 @@ library(janitor)
 library(igraph)
 library(ggnewscale)
 
-# Load the two scripts so their functions exist in this Quarto session.
+# Load the two scripts
 source("connectivity_function.R")
 source("basin_network.R")
 ```
 
 ```{r}
 #| label: load-data
+#| message: false
+#| warning: false
 
-# Paths point to your project’s raw/cleaned data; adjust if your folder layout differs.
 current_dams <- read_sf("../../../../../capstone/netzerohydro/data/raw/GRanD_Version_1_3") |>
   clean_names()
 
-# Table of future dam sites (lon/lat columns expected by net_with_dams_from_hydrobasin).
+# lon/lat columns expected by net_with_dams_from_hydrobasin).
 future_dams <- read_csv("../../../../../capstone/netzerohydro/data/raw/FHReD_2015_future_dams/FHReD_2015_future_dams_Zarfl_et_al_beta_version.csv") |>
   clean_names()
 
-# Hybas polygons for South America; level (e.g. lev04) must match hybas_id.
-basins_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_sa_lev01-12_v1c/hybas_sa_lev04_v1c.shp") |>
-  clean_names()
-
-# Global river + FFR attributes; must include continent, ord_stra, bb_id for the pipeline.
+# Global river + FFR attributes
 world_rivers_ffr <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/world_rivers_ffr.rds")
+
+
 ```
 
 ```{r}
+#| label: sub-basin-exploration
+
+# Hybas polygons to use
+basins_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_as_lev01-12_v1c/hybas_as_lev02_v1c.shp") |>
+  clean_names()
+
+# Explore basins in the loaded file
+basins_sf_big <- basins_sf %>% filter(basins_sf$sub_area > 100000)
+head(basins_sf_big, 14)
+
+ggplot() +
+  geom_sf(data = basins_sf_big, fill = NA, color = "black", linewidth = 0.4) +
+  geom_sf(
+    data = basins_sf_big,
+    aes(),
+    linewidth = 0.35,
+    alpha = 0.9
+  ) +
+  facet_wrap(~ hybas_id) +   # drop scales = "free"
+  guides(color = "none") +
+  theme_minimal() +
+  labs(
+    title = "sub-basins",
+    subtitle = "One panel per sub-basin"
+  )
+```
+
+
+```{r}
 #| label: build-network-and-connectivity
+
+# Change Selected Basin Here!!!
+hybas_id <- 4020015090
+continent <- "Asia" # From list below
+
+# > unique(world_rivers_ffr$continent)
+# "Africa"        "Europe"        "Asia"          "Australia"    
+# "South America" "North America"
+
+# HydroBASINS Regions Artic, Greenland and Siberia (might be Asia) are not in FFR data (This may need to be addressed later... hopefully not)
 
 # Build study network: one Hybas id, continent matches river layer, blend tolerance in metres.
 out <- net_with_dams_from_hydrobasin(
@@ -60,17 +98,29 @@ out <- net_with_dams_from_hydrobasin(
   future_dams       = future_dams,
   basins_sf         = basins_sf,
   world_rivers_ffr  = world_rivers_ffr,
-  hybas_id          = 6040345000,
-  continent         = "South America",
+  hybas_id          = hybas_id,
+  continent         = continent,
   ord_stra_min      = 3L,
   blend_tolerance_m = 50000
 )
 
+# Save network as an RDS file to not have to run over the same RDS each time
+saveRDS(out, sprintf("../../../../../capstone/netzerohydro/data/cleaned_v1/nets_with_dams/net_hybas%s_%s_pfaf%s.rds", hybas_id, continent, substr(as.character(hybas_id), 2, 3)))
+
+# OPTIONAL READ RDS (out is for output)
+#out <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nets_with_dams/net_hybas4040960480_Asia_pfaf04.rds")
+```
+
+
+```{r}
+#| label: build-dataframe-with-ffr-attributes
+
+
 # Per-dam connectivity and cascade labels; trunk_steps = 0 means same bb_id only.
 reach_df <- connectivity_from_network(
   out$net_with_dams,
-  cascade_threshold_km = 500,
-  cascade_trunk_steps  = 0L
+  cascade_threshold_km = NULL,
+  cascade_trunk_steps  = 5L
 )
 
 # --- reach_enriched ---
@@ -98,89 +148,103 @@ head(reach_enriched)
 #| fig-width: 10
 #| fig-height: 7
 
-# Study basin outline (from HydroBASINS); hollow fill so rivers show through.
+# Interactive map (mapview). Requires `out` and `reach_df` from earlier chunks.
+
+library(mapview)
+library(sf)
+
 one_subbasin <- out$basin_poly
+rivers_one <- out$rivers_cropped
 
-# Rivers colored by coarse trunk id: first 4 chars of bb_id group segments for legibility.
-rivers_one <- out$rivers_cropped %>%
-  dplyr::mutate(bb_id_prefix = substr(as.character(.data$bb_id), 1, 4))
-
-# Current dams as points (point-on-surface avoids odd multipoint geometries from intersect).
-dams_current_one <- if (nrow(out$dams_current_cropped) > 0L) {
-  sf::st_point_on_surface(out$dams_current_cropped)
-} else {
-  out$dams_current_cropped
-}
-
-# connectivity_from_network() appends current dams with NA cascade fields — map only future for cascade join.
 reach_future <- dplyr::filter(reach_df, .data$dam_type == "future")
 
-# Attach cascade label to cropped future dam sf for splitting plot layers.
-dams_fut <- out$dams_future_cropped %>%
-  dplyr::left_join(
-    dplyr::select(reach_future, dam_id, cascade_status),
-    by = "dam_id"
-  )
+dams_fut <- dplyr::left_join(
+  out$dams_future_cropped,
+  dplyr::select(reach_future, dam_id, cascade_status),
+  by = "dam_id"
+)
 
-# Split future dams: cascade vs not (for color emphasis on cascade only).
-dams_future_cascade <- dams_fut %>%
-  dplyr::filter(.data$cascade_status == "cascade")
+dams_future_cascade <- dplyr::filter(dams_fut, .data$cascade_status == "cascade")
+dams_future_other <- dplyr::filter(
+  dams_fut,
+  is.na(.data$cascade_status) | .data$cascade_status != "cascade"
+)
 
-dams_future_other <- dams_fut %>%
-  dplyr::filter(is.na(.data$cascade_status) | .data$cascade_status != "cascade")
-
-# One color per cascade dam id (only build palette if any exist).
-cascade_ids <- unique(as.character(dams_future_cascade$dam_id))
-if (length(cascade_ids) > 0L) {
-  cascade_pal <- stats::setNames(
-    scales::hue_pal()(length(cascade_ids)),
-    cascade_ids
-  )
+dams_cur <- if (nrow(out$dams_current_cropped) > 0L) {
+  sf::st_point_on_surface(out$dams_current_cropped)
 } else {
-  cascade_pal <- character(0)
+  NULL
 }
 
-# Base plot: basin boundary, rivers (first color scale = bb_id prefix), current + non-cascade future in fixed colors.
-p <- ggplot() +
-  geom_sf(data = one_subbasin, fill = NA, color = "black", linewidth = 0.4) +
-  geom_sf(
-    data = rivers_one,
-    aes(color = as.factor(.data$bb_id_prefix)),
-    linewidth = 0.5,
-    inherit.aes = FALSE
-  ) +
-  scale_color_discrete(name = "bb_id (first 4 digits)") +
-  # Rivers already use color = bb_id; second dam layer needs its own color scale (ggnewscale).
-  ggnewscale::new_scale_color() +
-  geom_sf(data = dams_current_one, color = "red", size = 2) +
-  geom_sf(data = dams_future_other, color = "gray60", size = 2)
+# Hover text: explicit string
+riv_df <- sf::st_drop_geometry(rivers_one)
+lab_rivers <- paste0("bb_id: ", riv_df$bb_id)
 
-# Overlay cascade future dams with distinct colors per dam_id (second scale_color_*).
-if (length(cascade_ids) > 0L) {
-  p <- p +
-    geom_sf(
-      data = dams_future_cascade,
-      aes(color = as.factor(.data$dam_id)),
-      size = 2.5,
-      inherit.aes = FALSE
-    ) +
-    scale_color_manual(
-      name = "Future dams (cascade)",
-      values = cascade_pal,
-      guide = guide_legend(override.aes = list(size = 3))
-    )
+if ("ord_stra" %in% names(riv_df)) {
+  lab_rivers <- paste0(lab_rivers, " | ord_stra: ", riv_df$ord_stra)
+}
+if ("csi" %in% names(riv_df)) {
+  lab_rivers <- paste0(lab_rivers, " | csi: ", riv_df$csi)
+}
+if ("bas_name" %in% names(riv_df)) {
+  lab_rivers <- paste0(lab_rivers, " | bas_name: ", riv_df$bas_name)
 }
 
-# Minimal map theme: hide axes (geographic context is the data layers).
-p +
-  theme_minimal() +
-  theme(
-    axis.text = element_blank(),
-    axis.ticks = element_blank(),
-    panel.grid = element_blank()
-  ) +
-  labs(
-    title = "Sub-basin: trunks by bb_id; future cascade dams by dam_id",
-    subtitle = "Red = current dams; gray = future not in cascade"
+mv <- mapview(
+  one_subbasin,
+  color = "black",
+  alpha.regions = 0,
+  legend = FALSE,
+  layer.name = "Basin"
+) +
+  mapview(
+    rivers_one,
+    zcol = "bb_id",
+    legend = FALSE,
+    label = lab_rivers,
+    layer.name = "Rivers"
   )
+
+if (!is.null(dams_cur) && nrow(dams_cur) > 0L) {
+  dcur <- sf::st_drop_geometry(dams_cur)
+  lab_cur <- paste0("dam_id: ", dcur$dam_id, " | current")
+  if ("grand_id" %in% names(dcur)) {
+    lab_cur <- paste0(lab_cur, " | grand_id: ", dcur$grand_id)
+  }
+  mv <- mv + mapview(
+    dams_cur,
+    col.regions = "red",
+    color = "red",
+    legend = FALSE,
+    label = lab_cur,
+    layer.name = "Current dams"
+  )
+}
+
+if (nrow(dams_future_other) > 0L) {
+  oth <- sf::st_drop_geometry(dams_future_other)
+  lab_other <- paste0("dam_id: ", oth$dam_id, " | cascade: ", oth$cascade_status)
+  mv <- mv + mapview(
+    dams_future_other,
+    col.regions = "gray60",
+    color = "gray60",
+    legend = FALSE,
+    label = lab_other,
+    layer.name = "Future (not cascade)"
+  )
+}
+
+if (nrow(dams_future_cascade) > 0L) {
+  cas <- sf::st_drop_geometry(dams_future_cascade)
+  lab_cas <- paste0("dam_id: ", cas$dam_id, " | cascade: ", cas$cascade_status)
+  mv <- mv + mapview(
+    dams_future_cascade,
+    zcol = "dam_id",
+    legend = FALSE,
+    label = lab_cas,
+    layer.name = "Future (cascade)"
+  )
+}
+
+mv
 ```
