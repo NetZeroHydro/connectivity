@@ -54,7 +54,7 @@ world_rivers_ffr <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v
 #| label: sub-basin-exploration
 
 # Hybas polygons to use
-basins_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_as_lev01-12_v1c/hybas_as_lev02_v1c.shp") |>
+basins_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_af_lev04_v1c/hybas_af_lev04_v1c.shp") |>
   clean_names()
 
 # Explore basins in the loaded file
@@ -78,13 +78,82 @@ ggplot() +
   )
 ```
 
+```{r}
+#| label: Interactive Map 
+
+library(tidyverse)
+library(plotly)
+library(htmlwidgets)
+library(scales)
+library(dplyr)
+
+ggplot_static <-basins_sf %>% 
+  #filter(hybas_id == 1040000010) %>% 
+  ggplot() + 
+  geom_sf(aes(text = paste0(
+            "hybas_id: ", hybas_id))) + 
+  theme_void()
+
+# interactive plot 
+ggplotly(ggplot_static, 
+         tooltip = "text" # inside of hover tool tip
+         )
+
+```
+
+```{r}
+#| label: Get basin's hybas_id as a csv  
+
+# Save your basin as a csv 
+#write_csv(basins_sf, here::here("africa_basin_sf.csv"))
+
+# Read the csv in 
+#basin_list <- read_csv(here::here("africa_basin_sf.csv"))
+
+```
+
+
+```{r}
+#| label: Looping thru function and saving data  
+
+# For loop 
+for (hybas_id in basin_list$hybas_id) {
+ 
+  continent <- "Africa"
+  
+  out <- net_with_dams_from_hydrobasin(
+    current_dams      = current_dams,
+    future_dams       = future_dams,
+    basins_sf         = basins_sf,
+    world_rivers_ffr  = world_rivers_ffr,
+    hybas_id          = hybas_id,
+    continent         = continent,
+    ord_stra_min      = 3L,
+    blend_tolerance_m = 50000)
+    
+    if(is.null(out)){
+      message("Skipping:",hybas_id)
+      next
+    }
+  
+    saveRDS(
+      out,
+      sprintf(
+        "../../../../../capstone/netzerohydro/data/cleaned_v1/nets_with_dams/net_hybas%s_%s_pfaf%s.rds",
+        hybas_id,
+        continent,
+        substr(as.character(hybas_id), 2, 3)
+      )
+    )
+}
+```
 
 ```{r}
 #| label: build-network-and-connectivity
 
 # Change Selected Basin Here!!!
-hybas_id <- 4020015090
-continent <- "Asia" # From list below
+hybas_id <- 1040003990
+continent <- "Africa" # From list below
 
 # > unique(world_rivers_ffr$continent)
 # "Africa"        "Europe"        "Asia"          "Australia"    
