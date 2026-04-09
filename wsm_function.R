@@ -58,7 +58,7 @@ wsm_function <- function(dataset, criteria, criteria_weights, criteria_type) {
   
   # Apply the benfical and nonbenfical functions to the correct criteria  
   for (i in names(criteria_type)) {
-    if (criteria_type[i] == "beneficial") {
+    if (criteria_type[[i]] == "beneficial") {
       dataset_filter[, i] <- min_max_ben(dataset_filter[, i])
     } else {
       dataset_filter[, i] <- min_max_NONben(dataset_filter[, i])
@@ -66,7 +66,10 @@ wsm_function <- function(dataset, criteria, criteria_weights, criteria_type) {
   }
   
   #---- Calculate weighted sum scores --- 
-  wsm_scores <- rowSums(criteria_weights *dataset_filter)
+  #wsm_scores <- rowSums(criteria_weights * dataset_filter)
+  wsm_scores <- rowSums(mapply(function(col, w) # iterating over each column & its corresponding weight
+    col * w, dataset_filter, # multiply 
+    criteria_weights[names(dataset_filter)])) # reorders the weights vectors to match dataset_filter order
   
   # Add scores to dataset 
   dataset$wsm_scores <- wsm_scores

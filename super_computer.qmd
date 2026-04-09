@@ -1,0 +1,163 @@
+---
+title: "super_computer"
+format: html
+---
+
+```{r}
+#| label: setup
+#| output: false
+
+# Packages: spatial (sf), networks (sfnetworks, tidygraph, igraph), tables (dplyr),
+# plotting (ggplot2, ggnewscale), data IO (readr), name cleaning (janitor).
+library(sfnetworks)
+library(sf)
+library(tidygraph)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(janitor)
+library(igraph)
+library(ggnewscale)
+
+# Load the two scripts
+source("connectivity_function.R")
+source("basin_network.R")
+```
+
+```{r}
+#| label: load-data
+#| message: false
+#| warning: false
+
+current_dams <- read_sf("../../../../../capstone/netzerohydro/data/raw/GRanD_Version_1_3") |>
+  clean_names()
+
+# lon/lat columns expected by net_with_dams_from_hydrobasin).
+future_dams <- read_csv("../../../../../capstone/netzerohydro/data/raw/FHReD_2015_future_dams/FHReD_2015_future_dams_Zarfl_et_al_beta_version.csv") |>
+  clean_names()
+
+# Global river + FFR attributes
+world_rivers_ffr <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/world_rivers_ffr.rds")
+
+```
+
+```{r}
+#| label: load-HYBAS data
+#| message: false
+#| warning: false
+#| 
+# Hybas polygons to use LEVEL 4
+
+basin_sf_africa <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_af_lev04_v1c/hybas_af_lev04_v1c.shp") |>
+  clean_names()
+
+basin_sf_Artctic <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_ar_lev04_v1c/hybas_ar_lev04_v1c.shp") |>
+  clean_names()
+
+basin_sf_Asia <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_as_lev04_v1c/hybas_as_lev04_v1c.shp") |>
+  clean_names()
+
+basin_sf_Aust <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_au_lev04_v1c/hybas_au_lev04_v1c.shp") |>
+  clean_names()
+
+basin_sf_Europe_MidEast <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_eu_lev04_v1c/hybas_eu_lev04_v1c.shp") |>
+  clean_names()
+
+basin_sf_Greenland <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_gr_lev04_v1c/hybas_gr_lev04_v1c.shp") |>
+  clean_names()
+
+basin_sf_NorthCentAmerica <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_na_lev04_v1c/hybas_na_lev04_v1c.shp") |>
+  clean_names()
+
+basin_sf_SouthAmerica <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_as_lev04_v1c/hybas_as_lev04_v1c.shp") |>
+  clean_names()
+
+basin_sf_Siberia <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_si_lev04_v1c/hybas_si_lev04_v1c.shp") |>
+  clean_names()
+
+
+# SPLIT Europe and Middle East 
+# Europe Masks 
+world <- spData::world
+Europe <- world %>% 
+  filter(continent == 'Europe') %>% 
+  st_union() %>% 
+  st_transform(crs = 'WGS84')
+
+# Intersection of Europe and basin_sf_Europe_MidEast = EUROPE 
+basin_sf_Europe <- st_filter(st_make_valid(basin_sf_Europe_MidEast), st_make_valid(Europe), .predicate = st_intersects)
+# DISJOINT of Europe and basin_sf_Europe_MidEast = Middle East 
+basin_sf_midEast <- st_filter(st_make_valid(basin_sf_Europe_MidEast), st_make_valid(Europe), .predicate = st_disjoint)
+
+
+# list them 
+continents_list <- list(basin_sf_africa, basin_sf_Artctic, basin_sf_Asia, basin_sf_Aust, basin_sf_Europe_MidEast, basin_sf_Greenland, basin_sf_NorthCentAmerica, basin_sf_SouthAmerica, basin_sf_Siberia)
+
+```
+
+Prepping the Loop 
+```{r}
+# List basins 
+basin_list <- list(basin_sf_africa, basin_sf_Artctic, basin_sf_Asia, basin_sf_Aust, basin_sf_Europe, basin_sf_midEast, basin_sf_Greenland, basin_sf_NorthCentAmerica, basin_sf_SouthAmerica, basin_sf_Siberia)
+
+# Dictionary-ish for the counties 
+basin_continent_list <- list (
+  basin_sf_africa = "Africa",
+  #basin_sf_Artctic = "", 
+  basin_sf_Asia = "Asia", 
+  basin_sf_Aust = "Australia",
+  basin_sf_Europe = "Europe", 
+  basin_sf_midEast = "Asia",
+  basin_sf_Greenland = "North America", 
+  basin_sf_NorthCentAmerica = "North America", 
+  basin_sf_SouthAmerica = "South America", 
+  basin_sf_Siberia = "Asia"
+)
+```
+
+
+```{r}
+#| label: Looping thru function and saving data  
+
+# For Loop the countries 
+# for (basin_name in names(basin_continent_list)) {
+#   continent <- basin_continent_list[[basin_name]]
+#   basin <- get(basin_name)
+#   
+  # For Loop the Hybas in each basin 
+  for (hybas_id in basin_list$hybas_id) {
+    #hybas_id <- hybas_id
+
+    out <- net_with_dams_from_hydrobasin(
+      current_dams      = current_dams,
+      future_dams       = future_dams,
+      basins_sf         = basins,
+      world_rivers_ffr  = world_rivers_ffr,
+      hybas_id          = hybas_id,
+      continent         = continent,
+      ord_stra_min      = 3L,
+      blend_tolerance_m = 50000
+    )
+    
+    if (is.null(out)) {
+      message("Skipping:", hybas_id)
+      next
+    }
+    
+    saveRDS(
+      out,
+      sprintf(
+        "../../../../../capstone/netzerohydro/data/cleaned_v1/nets_with_dams/net_hybas%s_%s_pfaf%s.rds",
+        hybas_id,
+        continent,
+        substr(as.character(hybas_id), 2, 3)
+      )
+    )
+  }
+  
+}
+
+
+
+```
+
