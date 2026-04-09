@@ -7,34 +7,10 @@
 
 #' Build snapped dam network for one HydroBASINS unit
 #'
-#' Takes in-memory objects (no file I/O) and returns a directed `sfnetwork`
+#' Takes in-memory objects and returns a directed `sfnetwork`
 #' representing river reaches inside a single HydroBASINS polygon, with optional
 #' dam nodes blended into the network.
 #'
-#' **Filter order (performance):**
-#' \describe{
-#'   \item{Attribute filter}{Filter `world_rivers_ffr` by `ord_stra >= ord_stra_min`
-#'   (and `continent` if provided).}
-#'   \item{Spatial crop}{Then crop to the basin polygon via `st_filter(..., st_intersects)`.}
-#' }
-#'
-#' **Required columns / types**
-#' \describe{
-#'   \item{`basins_sf` (sf)}{Must contain `hybas_id` and polygon geometry.}
-#'   \item{`world_rivers_ffr` (sf)}{Must contain `ord_stra`, `bb_id`, geometry (castable to LINESTRING).
-#'     If `continent` filtering is used, must also contain `continent`.}
-#'   \item{`current_dams` (sf)}{Must contain `grand_id` and geometry. Non-POINT results after intersection are
-#'     coerced to points via `st_point_on_surface()` before blending.}
-#'   \item{`future_dams` (data.frame)}{Must contain `lon_cleaned`, `lat_cleaned`. If missing `dam_id`, the function
-#'     renames `grand_id`/`id` or creates a synthetic id.}
-#' }
-#'
-#' **CRS behavior**
-#' \describe{
-#'   \item{Working CRS}{All spatial operations are done in the CRS of `world_rivers_ffr`.}
-#'   \item{Future dam point creation}{Future dams are converted from lon/lat using the CRS of `current_dams`,
-#'   then transformed into the working CRS.}
-#' }
 #'
 #' @param current_dams `sf` of current dams (GRanD-like) with column `grand_id`.
 #' @param future_dams `data.frame` of future dams (FHReD-like) with `lon_cleaned` and `lat_cleaned`.
@@ -67,7 +43,11 @@ net_with_dams_from_hydrobasin <- function(
     ord_stra_min = 3L,
     blend_tolerance_m = 30000) {
   
-  # --- Continent is OPTIONAL (fast pre-filter; skip if missing/blank). ---     # continent rule: optional for flexibility
+  # ---------------------------------------------------------------------------
+  # Check inputs for correctness
+  # ---------------------------------------------------------------------------
+  
+  # --- Continent is OPTIONAL (fast pre-filter; skip if missing/blank). ---   
   use_continent <- !(missing(continent) || is.null(continent) ||               # TRUE only if continent argument exists
                        length(continent) != 1L ||                              # require scalar input when present
                        is.na(as.character(continent)[1]) ||                    # reject NA
@@ -77,7 +57,7 @@ net_with_dams_from_hydrobasin <- function(
     as.character(continent)[1]                                                 # coerce to scalar character
   } else {                                                                     # if not filtering by continent
     NA_character_                                                              # sentinel meaning “no continent filter”
-  }                                                                            # end continent_val
+  }                                                                            
   
   # --- Ensure `hybas_id` is a single basin id. ---                             # this function builds ONE basin
   if (length(hybas_id) != 1L) {                                                # enforce scalar basin id
@@ -113,9 +93,9 @@ net_with_dams_from_hydrobasin <- function(
   # --- Choose the CRS of the river layer as the working CRS. ---               # all layers will be transformed here
   crs_r <- sf::st_crs(world_rivers_ffr)                                        # capture rivers CRS (authoritative)
   
-  # --------------------------------------------------------------------------- # begin basin polygon build
-  # Basin polygon (study area)                                                  # pull the basin polygon for one hybas id
-  # --------------------------------------------------------------------------- # end basin polygon header
+  # --------------------------------------------------------------------------- 
+  # Basin polygon (study area)                                                  
+  # --------------------------------------------------------------------------- 
   basin_poly <- basins_sf %>%                                                  # start from basins layer
     dplyr::filter(as.character(.data$hybas_id) == study_id) %>%                # keep the one matching id
     sf::st_make_valid() %>%                                                    # fix any invalid polygon geometry
@@ -128,11 +108,11 @@ net_with_dams_from_hydrobasin <- function(
   if (nrow(basin_poly) > 1L) {                                                 # if multiple parts/rows share same id
     u_study <- sf::st_union(sf::st_geometry(basin_poly))                       # union geometries into one multipart polygon
     basin_poly <- sf::st_sf(geometry = u_study, crs = sf::st_crs(basin_poly))  # rebuild single-row sf with CRS
-  }                                                                            # end union for multi-piece basin
+  }                                                                            
   
-  # --------------------------------------------------------------------------- # begin river filtering/cropping
-  # Rivers: filter fast by attributes, then spatially crop to basin polygon      # attribute filters reduce cost of st_filter
-  # --------------------------------------------------------------------------- # end river header
+  # --------------------------------------------------------------------------- 
+  # Rivers: filter fast by attributes, then spatially crop to basin polygon      
+  # --------------------------------------------------------------------------- 
   rivers_base <- world_rivers_ffr %>%                                          # start from all rivers
     dplyr::filter(.data$ord_stra >= ord_stra_min)                              # apply Strahler threshold first (fast)
   
@@ -151,8 +131,8 @@ net_with_dams_from_hydrobasin <- function(
       "ord_stra >= ", ord_stra_min,                                            # show threshold used
       ". Check hybas_id and CRS (and continent spelling if provided).",        # hints
       call. = FALSE                                                            # suppress call stack
-    )                                                                          # end stop call
-  }                                                                            # end no-rivers stop
+    )                                                                         
+  }                                                                            
   
   rivers_crop <- suppressWarnings(sf::st_cast(rivers_crop, "LINESTRING"))      # ensure LINESTRING geometries for sfnetwork
   rivers_crop <- rivers_crop[!sf::st_is_empty(rivers_crop), , drop = FALSE]    # drop empty geometries after casting
@@ -161,9 +141,9 @@ net_with_dams_from_hydrobasin <- function(
     stop("No LINESTRING reaches left after casting; check geometries.", call. = FALSE) # stop with geometry hint
   }                                                                            # end empty-after-cast stop
   
-  # --------------------------------------------------------------------------- # begin current dams handling
-  # Current dams: validate and crop to basin polygon                             # crop GRanD points to study basin
-  # --------------------------------------------------------------------------- # end current dams header
+  # --------------------------------------------------------------------------- 
+  # Current dams: validate and crop to basin polygon                             
+  # --------------------------------------------------------------------------- 
   if (!"grand_id" %in% names(current_dams)) {                                  # require GRanD id column
     stop("current_dams must contain column `grand_id` (GRanD).", call. = FALSE) # stop if missing
   }                                                                            # end current_dams id check
@@ -172,9 +152,9 @@ net_with_dams_from_hydrobasin <- function(
   current_dams <- sf::st_make_valid(current_dams) %>%                          # fix invalid dam geometry (if any)
     sf::st_transform(crs_r)                                                    # transform current dams to rivers CRS
   
-  # --------------------------------------------------------------------------- # begin future dams handling
-  # Future dams: ensure table, build sf points from lon/lat, then crop           # convert FHReD-style table to sf points
-  # --------------------------------------------------------------------------- # end future dams header
+  # --------------------------------------------------------------------------- 
+  # Future dams: ensure table, build sf points from lon/lat, then crop           
+  # --------------------------------------------------------------------------- 
   if (inherits(future_dams, "sf")) {                                           # reject if already sf (we expect data.frame)
     stop("future_dams must be a data.frame (FHReD table), not sf.", call. = FALSE) # stop if wrong type
   }                                                                            # end sf rejection
@@ -214,9 +194,9 @@ net_with_dams_from_hydrobasin <- function(
   dams_future_cropped <- sf::st_intersection(basin_poly, future_dams) %>%      # clip future dams to basin polygon
     dplyr::mutate(dam_id = as.character(.data$dam_id))                         # ensure join-safe character ids
   
-  # --------------------------------------------------------------------------- # begin blending prep
-  # Tag current vs future for blending                                           # blending keeps attributes on inserted nodes
-  # --------------------------------------------------------------------------- # end blending prep header
+  # --------------------------------------------------------------------------- 
+  # Tag current vs future for blending                                           
+  # --------------------------------------------------------------------------- 
   if (nrow(dams_current_cropped) > 0L) {                                       # only if there are current dams
     gt <- unique(as.character(sf::st_geometry_type(dams_current_cropped)))     # check geometry type(s)
     if (!identical(gt, "POINT")) {                                             # if intersection returned non-point geometry
@@ -245,9 +225,9 @@ net_with_dams_from_hydrobasin <- function(
     dams_future_cropped %>% dplyr::select(dam_id, is_current_dam)               # keep minimal columns for blending
   )                                                                            # end bind_rows
   
-  # --------------------------------------------------------------------------- # begin network build
-  # Build directed sfnetwork and blend dams (if any)                             # build graph and optionally snap dams
-  # --------------------------------------------------------------------------- # end network header
+  # --------------------------------------------------------------------------- 
+  # Build directed sfnetwork and blend dams (if any)                             
+  # --------------------------------------------------------------------------- 
   net <- sfnetworks::as_sfnetwork(rivers_crop, directed = TRUE) %>%            # convert cropped rivers into directed sfnetwork
     tidygraph::activate("edges") %>%                                           # switch to edge table
     dplyr::mutate(weight = sfnetworks::edge_length())                          # compute edge length (metres) as weight
@@ -266,5 +246,5 @@ net_with_dams_from_hydrobasin <- function(
     dams_current_cropped = dams_current_cropped,                               # current dams within basin
     dams_future_cropped = dams_future_cropped,                                 # future dams within basin
     all_dams = all_dams                                                        # combined dam sf used for blending
-  )                                                                            # end return list
-}                                                                              # end function
+  )                                                                          
+}                                                                            
