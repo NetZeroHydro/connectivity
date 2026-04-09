@@ -22,8 +22,6 @@
 # connectivity_from_network). Edge `weight` should be length in metres; values are
 # divided by 1000 for km after as.numeric().
 #
-# Inline comments: plain-language walkthrough for explaining to a team what each
-# step does and why.
 # =============================================================================
 
 #' Connectivity summary for a snapped dam network

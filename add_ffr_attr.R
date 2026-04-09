@@ -8,7 +8,7 @@
 #   - river-edge attributes from `net_with_dams` (join by bb_id)
 #   - optional future-dam attributes from a dam table (join by dam_id)
 #
-# IMPORTANT CONTRACT (per your request)
+# IMPORTANT CONTRACT
 #   `reach_enriched` should keep EVERYTHING from `reach_df` and only ADD columns.
 #   This means we do NOT drop columns via `output_cols` inside this function.
 # =============================================================================
@@ -16,7 +16,7 @@
 # -----------------------------------------------------------------------------
 # REACH_DF_OUTPUT_COLS — core connectivity columns from `reach_df`
 #
-# Use this as your base “keep list” when you want a slim export after enrichment:
+# Use this as a base “keep list” when you want a slim export after enrichment:
 #   keep <- c(REACH_DF_OUTPUT_COLS, "csi", "ord_stra", "bas_name")
 #   reach_enriched %>% dplyr::select(dplyr::all_of(keep))
 # -----------------------------------------------------------------------------
@@ -47,7 +47,7 @@ REACH_DF_OUTPUT_COLS <- c( # define the default core columns
 #' `edge_attr_cols` is the knob that controls which **edge columns** get copied
 #' onto `reach_df`. Typical FFR fields include `csi`, `ord_stra`, `bas_name`, etc.
 #'
-#' A good workflow is:
+#' Workflow:
 #'
 #' 1. Inspect available columns on cropped edges:
 #'
@@ -215,9 +215,6 @@ add_ffr_attr <- function(
 # IMPORTANT CONTRACT (per your request)
 #   `reach_enriched` should keep EVERYTHING from `reach_df` and only ADD columns.
 #   This means we do NOT drop columns via `output_cols` inside this function.
-#
-# STYLE NOTE
-#   You requested comment-heavy code. This file comments essentially every line.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
