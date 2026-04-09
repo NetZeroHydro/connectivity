@@ -1,0 +1,359 @@
+---
+title: "Function testing: basin network + connectivity (cascade_level)"
+format: html
+editor_options:
+  chunk_output_type: inline
+---
+
+This document is an **end-to-end test + debug viewer** for:
+
+- `net_with_dams_from_hydrobasin()` (build a basin network + snap dams)
+- `connectivity_from_network()` (returns `list(reach_df=..., debug=...)`)
+- `add_ffr_attr()` (joins river-edge attributes onto `reach_df` by `bb_id`)
+
+It also prints the key intermediate objects created inside `connectivity_from_network()` so you can inspect them in the rendered HTML:
+
+- `ds_dam`: downstream **current** dams from each future dam (future → current)
+- `us_dam`: upstream **current** dams from each future dam (current → future)
+- `node_bb`: node → `bb_id` (trunk) mapping
+- `trunk_edges`: inferred trunk adjacency edges (confluence trunk graph)
+
+---
+
+```{r}
+#| label: setup
+#| output: false
+
+# Packages: spatial (sf), networks (sfnetworks, tidygraph, igraph), tables (dplyr),
+# plotting (ggplot2, ggnewscale), data IO (readr), name cleaning (janitor).
+library(sfnetworks)
+library(sf)
+library(tidygraph)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(janitor)
+library(igraph)
+library(ggnewscale)
+
+# Load the two scripts so their functions exist in this Quarto session.
+source("connectivity_function_v2.R")
+source("net_with_dams_from_hydrobasin.R")
+source("add_ffr_attr.R")
+```
+
+```{r}
+#| label: load-data
+#| message: false
+#| warning: false
+
+# Current dams (GRanD).
+current_dams <- read_sf("../../../../../capstone/netzerohydro/data/raw/GRanD_Version_1_3") |>
+  clean_names()
+
+# Future dams (FHReD table; must include lon_cleaned/lat_cleaned).
+future_dams <- read_csv("../../../../../capstone/netzerohydro/data/raw/FHReD_2015_future_dams/FHReD_2015_future_dams_Zarfl_et_al_beta_version.csv") |>
+  clean_names()
+
+# HydroBASINS polygons (level must match your hybas_id).
+basins_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_as_lev01-12_v1c/hybas_as_lev04_v1c.shp") |>
+  clean_names()
+
+# Global river + FFR attributes.
+world_rivers_ffr <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/world_rivers_ffr.rds")
+```
+
+```{r}
+#| label: build-network-and-connectivity
+#| message: false
+#| warning: false
+
+# Change selected basin here.
+hybas_id <- 4041043580
+continent <- "Asia"
+
+# Build study network (one Hybas id + crop + optional blending).
+out <- net_with_dams_from_hydrobasin(
+  current_dams      = current_dams,
+  future_dams       = future_dams,
+  basins_sf         = basins_sf,
+  world_rivers_ffr  = world_rivers_ffr,
+  hybas_id          = hybas_id,
+  continent         = continent,
+  ord_stra_min      = 3L,
+  blend_tolerance_m = 50000
+)
+
+# OR read exisiting net_with_dams output from workbench
+out <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nets_with_dams/net_hybas4020015090_Asia_pfaf02.rds") |>
+  clean_names()
+
+# Run connectivity (returns list with reach_df + debug).
+out_conn <- connectivity_from_network(
+  out$net_with_dams,
+  cascade_threshold_km = 200,
+)
+
+# Extract the reach table (standalone data frame).
+reach_df <- out_conn$reach_df
+
+# Extract debug objects (intermediates you can inspect).
+dbg <- out_conn$debug
+
+# Quick preview.
+head(reach_df)
+```
+
+```{r}
+#| label: build-dataframe-with-ffr-attributes
+#| message: false
+#| warning: false
+
+# Join river-edge attributes by bb_id.
+reach_enriched <- add_ffr_attr(
+  out$net_with_dams,
+  reach_df,
+  edge_attr_cols = c("csi", "ord_stra", "bas_name"),
+  future_extra   = future_dams %>%
+  dplyr::mutate(dam_id = as.character(.data$dam_id)) %>%
+  dplyr::select(dam_id, capacity_mw)
+)
+```
+
+```{r}
+#| label: debug-step-1-dams
+
+# Step 1: dam nodes (what the network thinks are dams).
+head(dbg$dam_nodes_tbl, 20)
+
+# Current dam nodes.
+head(dbg$current_dams_tbl, 20)
+
+# Future dam nodes.
+head(dbg$future_dams_tbl, 20)
+```
+
+```{r}
+#| label: debug-step-2-node-bb
+
+# Step 2: node -> bb_id (trunk) mapping.
+head(dbg$node_bb, 20)
+```
+
+```{r}
+#| label: debug-step-3-all-pairs
+
+# Step 3: ALL future/current dam pairs with distances.
+# Downstream = future -> current.
+head(dbg$ds_dam_all, 20)
+
+# Upstream = current -> future (still stored as future/current pairs).
+head(dbg$us_dam_all, 20)
+```
+
+```{r}
+#| label: debug-step-4-downstream-filter
+
+# Step 4: downstream filtering (strict same trunk).
+head(dbg$ds_reachable, 20)
+head(dbg$ds_same_trunk, 20)
+
+# Per-future downstream summary.
+head(dbg$downstream_summary, 20)
+
+# Chosen downstream dam per future (closest same-trunk).
+head(dbg$chosen_downstream, 20)
+```
+
+```{r}
+#| label: debug-step-5-trunk-graph
+
+# Step 5: trunk adjacency graph inferred at confluences.
+head(dbg$trunk_edges, 50)
+dbg$g_trunk
+```
+
+```{r}
+#| label: map
+#| fig-width: 10
+#| fig-height: 7
+
+# Interactive map (mapview). Requires `out` and `reach_df` from earlier chunks.
+
+library(mapview)
+library(sf)
+library(dplyr)
+
+# Basin polygon.
+one_subbasin <- out$basin_poly
+
+# Cropped rivers.
+rivers_one <- out$rivers_cropped
+
+# IMPORTANT: use the SNAPPED/BLENDED dam nodes from the network so the map
+# shows the exact same dam set as `reach_df`.
+dam_nodes_sf <- out$net_with_dams %>%
+  tidygraph::activate("nodes") %>% # switch to nodes
+  sf::st_as_sf() %>% # node points as sf
+  dplyr::filter(!is.na(.data$dam_id)) %>% # keep only dam nodes
+  dplyr::mutate(dam_id = as.character(.data$dam_id)) # ensure join key is character
+
+# Split dam nodes into future vs current using the node flag.
+dams_fut_nodes <- dplyr::filter(dam_nodes_sf, .data$is_current_dam %in% FALSE)
+dams_cur_nodes <- dplyr::filter(dam_nodes_sf, .data$is_current_dam %in% TRUE)
+
+# Keep only future dams from reach_df (cascade_level is defined for future dams).
+reach_future <- dplyr::filter(reach_df, .data$dam_type == "future")
+
+# Join cascade_level from reach_df onto the snapped future dam nodes.
+dams_fut <- dplyr::left_join(
+  dams_fut_nodes,
+  dplyr::select(reach_future, dam_id, cascade_level),
+  by = "dam_id"
+)
+
+# Cascade definition for mapping: cascade_level >= 1.
+dams_future_cascade <- dplyr::filter(
+  dams_fut,
+  !is.na(.data$cascade_level) & .data$cascade_level >= 1L
+)
+
+# Future dams that are not in cascade.
+dams_future_other <- dplyr::filter(
+  dams_fut,
+  is.na(.data$cascade_level) | .data$cascade_level < 1L
+)
+
+# Current dams from snapped nodes (if any).
+dams_cur <- if (nrow(dams_cur_nodes) > 0L) dams_cur_nodes else NULL
+
+# Hover labels for rivers.
+riv_df <- sf::st_drop_geometry(rivers_one)
+lab_rivers <- paste0("bb_id: ", riv_df$bb_id)
+
+if ("ord_stra" %in% names(riv_df)) lab_rivers <- paste0(lab_rivers, " | ord_stra: ", riv_df$ord_stra)
+if ("csi" %in% names(riv_df)) lab_rivers <- paste0(lab_rivers, " | csi: ", riv_df$csi)
+if ("bas_name" %in% names(riv_df)) lab_rivers <- paste0(lab_rivers, " | bas_name: ", riv_df$bas_name)
+
+# Base layers: basin and rivers.
+mv <- mapview(
+  one_subbasin,
+  color = "black",
+  alpha.regions = 0,
+  legend = FALSE,
+  layer.name = "Basin"
+) +
+  mapview(
+    rivers_one,
+    zcol = "bb_id",
+    legend = FALSE,
+    label = lab_rivers,
+    layer.name = "Rivers"
+  )
+
+# Current dams layer.
+if (!is.null(dams_cur) && nrow(dams_cur) > 0L) {
+  dcur <- sf::st_drop_geometry(dams_cur)
+  lab_cur <- paste0("dam_id: ", dcur$dam_id, " | current")
+
+  mv <- mv + mapview(
+    dams_cur,
+    col.regions = "red",
+    color = "red",
+    legend = FALSE,
+    label = lab_cur,
+    layer.name = "Current dams"
+  )
+}
+
+# Future non-cascade layer.
+if (nrow(dams_future_other) > 0L) {
+  oth <- sf::st_drop_geometry(dams_future_other)
+  lab_other <- paste0("dam_id: ", oth$dam_id, " | cascade_level: ", oth$cascade_level)
+
+  mv <- mv + mapview(
+    dams_future_other,
+    col.regions = "gray60",
+    color = "gray60",
+    legend = FALSE,
+    label = lab_other,
+    layer.name = "Future (not cascade)"
+  )
+}
+
+# Future cascade layer (colored by cascade_level).
+if (nrow(dams_future_cascade) > 0L) {
+  cas <- sf::st_drop_geometry(dams_future_cascade)
+  lab_cas <- paste0("dam_id: ", cas$dam_id, " | cascade_level: ", cas$cascade_level)
+
+  mv <- mv + mapview(
+    dams_future_cascade,
+    zcol = "cascade_level",
+    legend = TRUE,
+    label = lab_cas,
+    layer.name = "Future (cascade)"
+  )
+}
+
+mv
+```
+
+```{r}
+#| label: debug-step-6-upstream-filter
+
+# Step 6: upstream filtering within threshold + trunk-step distances.
+head(dbg$us_reachable, 20)
+head(dbg$us_within_threshold, 20)
+head(dbg$us_with_steps, 20)
+
+# Chosen upstream dam per future (closest within threshold).
+head(dbg$chosen_upstream, 20)
+```
+
+```{r}
+#| label: debug-step-7-final-output
+
+# Step 7: final reach_df (what you export / join later).
+head(reach_df, 20)
+```
+
+```{r}
+#| label: debug-step-8-decision-table
+
+# Step 8: one-row-per-future decision table (chosen up/downstream + cascade_level).
+head(dbg$decision_table, 50)
+```
+
+```{r}
+#| label: debug-ds-us
+
+# Look at the downstream dam table (future -> current).
+head(dbg$ds_dam_all, 20)
+
+# Look at the upstream dam table (current -> future).
+head(dbg$us_dam_all, 20)
+```
+
+```{r}
+#| label: debug-bb
+
+# Node -> bb_id mapping (trunk assignment).
+head(dbg$node_bb, 20)
+
+# Future dam -> bb_id.
+head(dbg$future_trunks, 20)
+
+# Current dam -> bb_id.
+head(dbg$current_trunks, 20)
+```
+
+```{r}
+#| label: debug-trunk-graph
+
+# Look at trunk adjacency edges inferred at confluences.
+head(dbg$trunk_edges, 50)
+
+# Trunk graph summary.
+dbg$g_trunk
+```
+
