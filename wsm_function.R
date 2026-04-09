@@ -66,10 +66,10 @@ wsm_function <- function(dataset, criteria, criteria_weights, criteria_type) {
   }
   
   #---- Calculate weighted sum scores --- 
-  #wsm_scores <- rowSums(criteria_weights * dataset_filter)
-  wsm_scores <- rowSums(mapply(function(col, w) # iterating over each column & its corresponding weight
-    col * w, dataset_filter, # multiply 
-    criteria_weights[names(dataset_filter)])) # reorders the weights vectors to match dataset_filter order
+  #wsm_scores <- rowSums(criteria_weights * dataset_filter) # dataset_filter might NOT align with criteria_weights
+  wsm_scores <- rowSums(mapply(function(col, w) # iterating over each column (c) of dataset_filter & its corresponding weight
+    col * w, dataset_filter, # multiply column & its matching weight 
+    criteria_weights[names(dataset_filter)])) # reorders the weights vectors to match dataset_filter order, so everything get multi correctly
   
   # Add scores to dataset 
   dataset$wsm_scores <- wsm_scores
@@ -81,7 +81,7 @@ wsm_function <- function(dataset, criteria, criteria_weights, criteria_type) {
       between(wsm_scores, 0, 0.25) ~ 'D',
       between(wsm_scores, 0.25, 0.50) ~ 'C',
       between(wsm_scores, 0.50, 0.75) ~ 'B',
-      between(wsm_scores, 0.75, 1.00) ~ 'A',
+      wsm_scores > 0.75 ~ 'A',
       TRUE ~ NA))
   
   # dataset <- dataset %>% 

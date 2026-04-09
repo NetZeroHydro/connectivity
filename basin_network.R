@@ -133,14 +133,17 @@ net_with_dams_from_hydrobasin <- function(
   # (5) snap dams onto the network if any exist, else leave rivers-only graph.
   # ---------------------------------------------------------------------------
   
-  # --- Check continent string: must be one label that exists on the river layer ---
-  if (missing(continent) || length(continent) != 1L || !nzchar(as.character(continent)[1])) {
-    stop(
-      "continent must be a single non-empty string matching world_rivers_ffr$continent.",
-      call. = FALSE
-    )
+  # --- Continent is OPTIONAL ---
+  # If `continent` is provided as a non-empty string, we use it to filter rivers fast.
+  # If it is missing / NULL / NA / empty string, we do NOT filter by continent.
+  use_continent <- !(missing(continent) || is.null(continent) || length(continent) != 1L ||
+                       is.na(as.character(continent)[1]) || !nzchar(as.character(continent)[1]))
+  
+  continent_val <- if (use_continent) {
+    as.character(continent)[1] # single string for dplyr filter
+  } else {
+    NA_character_ # sentinel meaning “no continent filter”
   }
-  continent_val <- as.character(continent)[1] # single string for dplyr filter
   
   # --- One basin only: keeps the function simple (no multi-basin union here) ---
   if (length(hybas_id) != 1L) {
@@ -204,9 +207,14 @@ net_with_dams_from_hydrobasin <- function(
   # Then keep lines that actually touch the basin polygon. That order avoids
   # feeding the spatial filter the entire global river set.
   # ---------------------------------------------------------------------------
-  ord_min <- ord_stra_min
-  rivers_crop <- world_rivers_ffr %>%
-    dplyr::filter(.data$continent == continent_val, .data$ord_stra >= ord_min) %>%
+  rivers_base <- world_rivers_ffr %>%
+    dplyr::filter(.data$ord_stra >= ord_min)
+  
+  if (use_continent) {
+    rivers_base <- rivers_base %>% dplyr::filter(.data$continent == continent_val)
+  }
+  
+  rivers_crop <- rivers_base %>%
     sf::st_filter(y = basin_poly, .predicate = sf::st_intersects)
   
   if (nrow(rivers_crop) == 0L) {

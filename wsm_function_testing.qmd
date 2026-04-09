@@ -161,3 +161,5 @@ left_join(count, averages, by = c("connectivity_category", "score_letter"))
 
 ```
 
+
+
