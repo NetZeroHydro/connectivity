@@ -82,20 +82,20 @@ join <- left_join(reach_df_one, future_dams_flagged, by = 'dam_id')
 join_trial <- join %>%
   mutate(connectivity_category = case_when(
     
-    # (1) Both within 250km
-    min_distance_upstream_km <= 50 & min_distance_downstream_km <= 50 ~ "cascade",
+    # (1) Both within 50km
+    min_distance_upstream_km <= 250 & min_distance_downstream_km <= 250 ~ "cascade",
     
     # (2) No dams in either direction OR both further than 200km
-    (is.na(min_distance_upstream_km) | min_distance_upstream_km > 200) &
-      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 200) ~ "FFR",
+    (is.na(min_distance_upstream_km) | min_distance_upstream_km > 250) &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 250) ~ "FFR",
     
     # (3) Upstream dam within 200km, no downstream or downstream > 200km
-    min_distance_upstream_km <= 200 &
-      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 200) ~ "downstream",
+    min_distance_upstream_km <= 250 &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 250) ~ "downstream",
     
     # (4) Downstream dam within 200km, no upstream or upstream > 200km
-    min_distance_downstream_km <= 200 &
-      (is.na(min_distance_upstream_km) | min_distance_upstream_km > 200) ~ "upstream",
+    min_distance_downstream_km <= 250 &
+      (is.na(min_distance_upstream_km) | min_distance_upstream_km > 250) ~ "upstream",
     
     TRUE ~ NA
   ))
@@ -105,21 +105,59 @@ join_trial <- join %>%
 join_trial <- join_trial %>% 
   mutate(connectivity_category_num  = case_when(
     connectivity_category == "cascade" ~ 5, 
-    connectivity_category == "upstream" ~ 3, 
-    connectivity_category == "downstream" ~ 3, 
+    connectivity_category == "upstream" ~ 2, 
+    connectivity_category == "downstream" ~ 2, 
     connectivity_category == "FFR" ~ 1, 
     TRUE ~ 1
     ))
+
+
+
+join_trial <- join_trial %>%
+  mutate(
+    in_protected_area_num = case_when(
+      in_protected_area == FALSE ~ 1, # no PA, 1 = "good"
+      in_protected_area == TRUE ~ 0, # inside PA, 0 = bad 
+      TRUE ~ NA
+    )
+  )
 
 ```
 
 Using the function 
 ```{r}
+criteria <- c('csi', 'connectivity_category_num', 'in_protected_area_num')
 
-wsm_function(dataset = join_trial, 
-     criteria = c('csi', 'connectivity_category_num', 'n_protected_areas'), 
-     criteria_weights = c(csi = 0.5, connectivity_category_num = 0.3, n_protected_areas = 0.2),
-     criteria_type = c(csi = "nonbeneficial", connectivity_category_num = "beneficial", n_protected_areas = "beneficial"))
+criteria_weights <- c(csi = 0.4, connectivity_category_num = 0.55, in_protected_area_num = 0.05)
+
+criteria_type <- c(csi = "nonbeneficial", # Lower number = better 
+                       connectivity_category_num = "beneficial", # Higher number = better 
+                       in_protected_area_num = "beneficial")
+
+
+results <- wsm_function(dataset = join_trial, 
+     criteria = criteria, 
+     criteria_weights = criteria_weights, 
+     criteria_type = criteria_type)
+
+results
+
+results_filtered <- results %>% 
+  select(c(dam_id, csi, capacity_mw, in_protected_area,in_protected_area_num, connectivity_category, connectivity_category_num, wsm_scores, score_letter))
+
+
+count <- results_filtered %>% 
+  group_by(connectivity_category, score_letter) %>% 
+  summarise(count = n(), .groups = "drop") 
+
+averages <- results_filtered %>% 
+  group_by(connectivity_category, score_letter) %>% 
+  summarise(avg_wsm = mean(wsm_scores), 
+            avg_csi = mean(csi), 
+            avg_PA = mean(in_protected_area_num),
+            .groups = "drop") 
+
+left_join(count, averages, by = c("connectivity_category", "score_letter"))
 
 ```
 

@@ -42,30 +42,31 @@ wsm_function <- function(dataset, criteria, criteria_weights, criteria_type) {
   # --- Filter for columns inputed as criteria --- 
   dataset_filter <- dataset %>% select(any_of(criteria))
   
-  # ---- Linear Normalize data ---- 
+  # ---- Min-Max Normalize data ---- 
   
-  # Benifical and Non benifical functions 
-  benfical_norm_fun <- function(column) {
-    norm = column / max(column, na.rm = TRUE)
+  # Beneficial and Non beneficial functions
+  min_max_ben <- function(x) {
+    norm = (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
     return(norm)
   }
   
-  nonbenfical_norm_fun <- function(column) {
-    norm = min(column, na.rm = TRUE) / column
+  min_max_NONben <- function(x) {
+    norm = (max(x, na.rm = TRUE) - x) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
     return(norm)
   }
+  
   
   # Apply the benfical and nonbenfical functions to the correct criteria  
   for (i in names(criteria_type)) {
     if (criteria_type[i] == "beneficial") {
-      dataset_filter[, i] <- benfical_norm_fun(dataset_filter[, i])
+      dataset_filter[, i] <- min_max_ben(dataset_filter[, i])
     } else {
-      dataset_filter[, i] <- nonbenfical_norm_fun(dataset_filter[, i])
+      dataset_filter[, i] <- min_max_NONben(dataset_filter[, i])
     }
   }
   
   #---- Calculate weighted sum scores --- 
-  wsm_scores <- rowSums(critera_weights*dataset_filter)
+  wsm_scores <- rowSums(criteria_weights *dataset_filter)
   
   # Add scores to dataset 
   dataset$wsm_scores <- wsm_scores
@@ -73,19 +74,28 @@ wsm_function <- function(dataset, criteria, criteria_weights, criteria_type) {
   
   # Add letters 
   dataset <- dataset %>% 
-    mutate(
-      quartile = ntile(wsm_scores, n = 5), # Higher groups better 
-      quartile_label = case_when( # Add letters based on quartiles 
-        quartile == 1 ~ "F", 
-        quartile == 2 ~ "D",
-        quartile == 3 ~ "C",
-        quartile == 4 ~ "B", 
-        quartile == 5 ~ "A"
-      )
-    ) %>% 
-    select(!quartile) # Remove this column 
+    mutate(score_letter = case_when(
+      between(wsm_scores, 0, 0.25) ~ 'D',
+      between(wsm_scores, 0.25, 0.50) ~ 'C',
+      between(wsm_scores, 0.50, 0.75) ~ 'B',
+      between(wsm_scores, 0.75, 1.00) ~ 'A',
+      TRUE ~ NA))
+  
+  # dataset <- dataset %>% 
+  #   mutate(
+  #     quartile = ntile(wsm_scores, n = 5), # Higher groups better 
+  #     quartile_label = case_when( # Add letters based on quartiles 
+  #       quartile == 1 ~ "F", 
+  #       quartile == 2 ~ "D",
+  #       quartile == 3 ~ "C",
+  #       quartile == 4 ~ "B", 
+  #       quartile == 5 ~ "A"
+  #     )
+  #   ) %>% 
+  #   select(!quartile) # Remove this column 
   
   # return the dataset 
+  
   return(dataset)
   
 }
