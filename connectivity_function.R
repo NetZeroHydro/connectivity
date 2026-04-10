@@ -47,7 +47,7 @@
 #'   `"cascade"` only if the nearest-current upstream *and* downstream distances
 #'   (among allowed trunks) are both `<= cascade_threshold_km` (km). If NULL,
 #'   any upstream + any downstream among those trunks counts as cascade.
-#' @param cascade_trunk_steps Non-negative integer. `0` = only current dams on
+#' @param cascade_trunk_steps First check same trunk if that one exists it defines the cascade 
 #'   the **same** `bb_id` as the future dam are considered. `1, 2, ...` = also
 #'   current dams on trunks within that many steps on an **undirected trunk graph**
 #'   inferred from the network: at each graph node, if two or more distinct
@@ -161,7 +161,8 @@ connectivity_from_network <- function(net_with_dams,
   # All-pairs distances used later per future dam
   #
   # Downstream matrix: rows = current dam nodes, cols = future dam nodes, values =
-  # km along directed edges from that current to that future. Upstream matrix:
+  # km along directed edges from that current to that future. 
+  #  Upstream matrix:
   # from future to current (still mode "out", but start at future). If either
   # side has no dams, we skip igraph (empty v/to breaks) and use placeholder
   # matrices so the rest of the code can still run.
@@ -374,13 +375,13 @@ connectivity_from_network <- function(net_with_dams,
   threshold_km <- if (is.null(cascade_threshold_km)) NA_real_ else cascade_threshold_km
   
   if (is.na(threshold_km)) {
-    reach_future$cascade_status <- ifelse(
+    reach_future$cascade_status <- dplyr::if_else(
       reach_future$has_current_upstream & reach_future$has_current_downstream,
       "cascade",
       "not in cascade"
     )
   } else {
-    reach_future$cascade_status <- ifelse(
+    reach_future$cascade_status <- dplyr::if_else(
       reach_future$has_current_upstream & reach_future$has_current_downstream &
         !is.na(reach_future$min_distance_upstream_km) &
         !is.na(reach_future$min_distance_downstream_km) &
