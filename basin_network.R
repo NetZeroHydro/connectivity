@@ -208,7 +208,7 @@ net_with_dams_from_hydrobasin <- function(
   # feeding the spatial filter the entire global river set.
   # ---------------------------------------------------------------------------
   rivers_base <- world_rivers_ffr %>%
-    dplyr::filter(.data$ord_stra >= ord__stra_min)
+    dplyr::filter(.data$ord_stra >= ord_stra_min)
   
   if (use_continent) {
     rivers_base <- rivers_base %>% dplyr::filter(.data$continent == continent_val)
