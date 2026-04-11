@@ -1,0 +1,189 @@
+---
+title: "interactive_map"
+format: html
+---
+
+## Load & Wrangle Data 
+```{r}
+# Load data 
+east_as <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/se_as_basin_df.rds")
+east_as <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1//raf_presentation_df.rds")
+east_as_basin_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_as_lev02_v1c/hybas_as_lev02_v1c.shp") |>
+  janitor::clean_names() %>% 
+  filter(hybas_id == 4020015090) %>% 
+  st_transform(crs = 4326)
+
+east_as_network <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nets_with_dams/net_hybas4020015090_Asia_pfaf02.rds")
+
+# Fix dam_id 
+future_dams_flagged$dam_id <- as.character(future_dams_flagged$dam_id)
+
+# Join PA with dam data 
+east_as_pa <- left_join(east_as, future_dams_flagged, by = 'dam_id')
+
+# Fix the Data 
+east_as_pa <- east_as_pa %>%
+  mutate(connectivity_category = case_when(
+    # (1) Both within 250km
+    cascade_level == 1 ~ "cascade1",
+    cascade_level == 2 ~ "cascade2",
+    cascade_level >= 3 ~ "cascade3+",
+    # (2) No dams in either direction OR both further than 200km
+    (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "FFR",
+    # (3) Upstream dam within 200km, no downstream or downstream > 200km
+    min_distance_upstream_km <= 70 &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "downstream",
+    # (4) Downstream dam within 200km, no upstream or upstream > 200km
+    min_distance_downstream_km <= 70 &
+      (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) ~ "upstream",
+    TRUE ~ NA
+  )) %>% 
+  mutate(connectivity_category_num = case_when(
+    connectivity_category == "cascade1" ~ 7, 
+    connectivity_category == "cascade2" ~ 5, 
+    connectivity_category == "cascade3+" ~ 5, 
+    connectivity_category == "upstream" ~ 3,
+    connectivity_category == "downstream" ~ 3,
+    connectivity_category == "FFR" ~ 1,
+  )) %>% 
+  mutate(in_pa_num = ifelse(in_protected_area == FALSE, 1, 0), # 1 = No in PA (good)
+         # Add lat and long columns for leaflet map
+         long = st_coordinates(east_as_pa$geometry)[,1], 
+         lat = st_coordinates(east_as_pa$geometry)[,2]) %>%  
+  #st_drop_geometry() %>% 
+  filter(dam_type == "future")
+  
+
+```
+
+
+## Run the model 
+```{r}
+criteria <- c('csi', 'connectivity_category_num', 'in_pa_num')
+
+criteria_weights <- c(csi = 0.4, connectivity_category_num = 0.4, in_pa_num = 0.2)
+
+criteria_type <- c(csi = "nonbeneficial", # Lower number = better 
+                       connectivity_category_num = "beneficial", # Higher number = better 
+                       in_pa_num = "beneficial")
+
+
+results <- wsm_model(dataset = east_as_pa, 
+     criteria = criteria, 
+     criteria_weights = criteria_weights, 
+     criteria_type = criteria_type)
+
+results
+```
+
+Change the categories into factors 
+```{r}
+# Make the connectivity categories factors 
+results$connectivity_category <- factor(results$connectivity_category, levels = c("cascade1","cascade2", "cascade3+", "upstream", "downstream", "FFR"), labels = c("Cascade1","Cascade2", "Cascade3+", "Upstream", "Downstream", "FFR"))
+```
+
+Create a color palette 
+```{r}
+
+# Create a color paletes 
+connectivity_cat_pal <- c("Cascade1" = "#003800",
+                          "Cascade2" = "#1cbf3a",
+                          "Cascade3+" = "#b7ffd7",
+                          "Upstream" = "#ffe500",
+                          "Downstream" = "#f99b2f",
+                          "FFR" = "#c13000")
+
+pal <- colorFactor(palette = connectivity_cat_pal, domain = results$connectivity_category)
+
+```
+
+Make the results spatial
+```{r}
+library(tmap)
+library(sf)
+
+# Make it sf and 
+results_sf <- st_as_sf(results, crs = 4326)
+
+# Check CRS 
+st_crs(results_sf) == st_crs(east_as_basin_sf)
+results_sf <- st_set_crs(results_sf, 4326) 
+
+```
+
+Create a Leaflet Map 
+```{r}
+library(leaflet)
+library(htmlwidgets)
+
+cat_interactive_leaflet <- leaflet(data = results_sf ) %>% 
+  addProviderTiles(providers$Esri.WorldPhysical) %>% # Tile 
+  # Add Markers
+  addCircleMarkers(
+             radius = 6,
+             color = ~pal(results_sf$connectivity_category),
+             
+             # Pop up messages
+             popup = paste0(
+                "<b>Dam_ID: ", results_sf$dam_id, "</b><br>", 
+                "<b>Connectivity Category: </b>", results_sf$connectivity_category, "<br>", 
+                "<b>CSI: </b>", results_sf$csi, "<br>", 
+                "<b>In a PA: </b>", results_sf$in_protected_area, "<br>",
+                "<b>Capacity: </b>", results_sf$capacity_mw, "mw", "<br>",
+                "<b> Weighted Sum Model Score: </b>", round(results_sf$wsm_scores, 3)
+             )) %>% 
+  # Legend
+  addLegend(
+    pal = pal, 
+    values = results_sf$connectivity_category,
+    group = "circles",
+    position = "topright" 
+  )
+
+
+saveWidget(cat_interactive_leaflet, file = here::here("figs", "cat_interactive_leaflet.html"))
+      
+```
+
+Interactive Ggplot 
+
+```{r}
+library(ggplot2)
+library(plotly)
+
+# GGplot 
+wms_ggmap_cat <- ggplot() +
+  geom_sf(data = east_as_basin_sf, fill = NA, color = "black", alpha = 0.5) +
+  geom_sf(data = east_as_network$rivers_cropped, color = "grey", alpha = 0.45) + 
+  geom_sf(data = results_sf, aes(color = connectivity_category, 
+                                 text = paste0(
+      "<b>Dam_ID: ", dam_id, "</b><br>", 
+      "<b>Connectivity Category: </b>", connectivity_category, "<br>", 
+      "<b>CSI: </b>", csi, "<br>", 
+      "<b>In a PA: </b>", in_protected_area, "<br>",
+      "<b>Capacity: </b>", capacity_mw, "mw", "<br>",
+      "<b> Weighted Sum Model Score: </b>", round(wsm_scores, 3)
+    )), alpha = 0.7) +
+  scale_color_manual(values = connectivity_cat_pal)+
+  theme_void() + 
+  labs(title = "Connectivity Catagories for Future Dams in Southeast Asia", 
+       color = "Connectivity Catagories")
+
+con_cat_ggmap_interactive <- ggplotly(wms_ggmap_cat, 
+         tooltip = "text" # inside of hover tool tip
+         )
+
+con_cat_ggmap_interactive
+
+htmlwidgets::saveWidget(
+  ggplotly(wms_ggmap_interactive, tooltip = "text"),
+  file = here::here("figs", "cat_interactive_plot.html")
+)
+
+```
+
+
+
+
+
