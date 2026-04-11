@@ -47,10 +47,7 @@ east_as_pa <- east_as_pa %>%
     connectivity_category == "downstream" ~ 3,
     connectivity_category == "FFR" ~ 1,
   )) %>% 
-  mutate(in_pa_num = ifelse(in_protected_area == FALSE, 1, 0), # 1 = No in PA (good)
-         # Add lat and long columns for leaflet map
-         long = st_coordinates(east_as_pa$geometry)[,1], 
-         lat = st_coordinates(east_as_pa$geometry)[,2]) %>%  
+  mutate(in_pa_num = ifelse(in_protected_area == FALSE, 1, 0)) %>%  # 1 = No in PA (good)
   #st_drop_geometry() %>% 
   filter(dam_type == "future")
   
