@@ -1,5 +1,3 @@
-#!/usr/bin/env Rscript
-
 # =============================================================================
 # add_ffr_attr.R
 # =============================================================================
@@ -27,6 +25,9 @@ REACH_DF_OUTPUT_COLS <- c( # define the default core columns
   "has_current_downstream", # downstream presence flag
   "min_distance_upstream_km", # nearest upstream distance
   "min_distance_downstream_km", # nearest downstream distance
+  "dam_id_up", # nearest upstream current dam id
+  "dam_id_down", # nearest same-trunk downstream current dam id
+  "us_trunks_away", # trunk-graph hops to nearest upstream current dam
   "cascade_level", # cascade level (0..)
   "bb_id" # trunk id
 ) # end vector

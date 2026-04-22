@@ -85,13 +85,13 @@ out <- net_with_dams_from_hydrobasin(
 )
 
 # OR read exisiting net_with_dams output from workbench
-out <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nets_with_dams/net_hybas4020015090_Asia_pfaf02.rds") |>
-  clean_names()
+#out <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nets_with_dams/net_hybas4020015090_Asia_pfaf02.rds") |>
+ # clean_names()
 
 # Run connectivity (returns list with reach_df + debug).
 out_conn <- connectivity_from_network(
   out$net_with_dams,
-  cascade_threshold_km = 200,
+  cascade_threshold_km = 100
 )
 
 # Extract the reach table (standalone data frame).
@@ -116,7 +116,7 @@ reach_enriched <- add_ffr_attr(
   edge_attr_cols = c("csi", "ord_stra", "bas_name"),
   future_extra   = future_dams %>%
   dplyr::mutate(dam_id = as.character(.data$dam_id)) %>%
-  dplyr::select(dam_id, capacity_mw)
+  dplyr::select(dam_id, capacity_mw, project_name)
 )
 ```
 
@@ -170,6 +170,65 @@ head(dbg$chosen_downstream, 20)
 
 # Step 5: trunk adjacency graph inferred at confluences.
 head(dbg$trunk_edges, 50)
+dbg$g_trunk
+```
+
+```{r}
+#| label: debug-step-6-upstream-filter
+
+# Step 6: upstream filtering within threshold + trunk-step distances.
+head(dbg$us_reachable, 20)
+head(dbg$us_within_threshold, 20)
+head(dbg$us_with_steps, 20)
+
+# Chosen upstream dam per future (closest within threshold).
+head(dbg$chosen_upstream, 20)
+```
+
+```{r}
+#| label: debug-step-7-final-output
+
+# Step 7: final reach_df (what you export / join later).
+head(reach_df, 20)
+```
+
+```{r}
+#| label: debug-step-8-decision-table
+
+# Step 8: one-row-per-future decision table (chosen up/downstream + cascade_level).
+head(dbg$decision_table, 50)
+```
+
+```{r}
+#| label: debug-ds-us
+
+# Look at the downstream dam table (future -> current).
+head(dbg$ds_dam_all, 20)
+
+# Look at the upstream dam table (current -> future).
+head(dbg$us_dam_all, 20)
+```
+
+```{r}
+#| label: debug-bb
+
+# Node -> bb_id mapping (trunk assignment).
+head(dbg$node_bb, 20)
+
+# Future dam -> bb_id.
+head(dbg$future_trunks, 20)
+
+# Current dam -> bb_id.
+head(dbg$current_trunks, 20)
+```
+
+```{r}
+#| label: debug-trunk-graph
+
+# Look at trunk adjacency edges inferred at confluences.
+head(dbg$trunk_edges, 50)
+
+# Trunk graph summary.
 dbg$g_trunk
 ```
 
@@ -298,62 +357,147 @@ if (nrow(dams_future_cascade) > 0L) {
 mv
 ```
 
-```{r}
-#| label: debug-step-6-upstream-filter
 
-# Step 6: upstream filtering within threshold + trunk-step distances.
-head(dbg$us_reachable, 20)
-head(dbg$us_within_threshold, 20)
-head(dbg$us_with_steps, 20)
-
-# Chosen upstream dam per future (closest within threshold).
-head(dbg$chosen_upstream, 20)
-```
 
 ```{r}
-#| label: debug-step-7-final-output
+#| label: leaflet-from-reach-enriched
+#| message: false
+#| warning: false
 
-# Step 7: final reach_df (what you export / join later).
-head(reach_df, 20)
-```
+library(leaflet)
+library(sf)
+library(dplyr)
+library(htmltools)
 
-```{r}
-#| label: debug-step-8-decision-table
+if (!exists("out", inherits = FALSE)) stop("Missing object: out", call. = FALSE)
+if (!exists("reach_enriched", inherits = FALSE)) stop("Missing object: reach_enriched", call. = FALSE)
 
-# Step 8: one-row-per-future decision table (chosen up/downstream + cascade_level).
-head(dbg$decision_table, 50)
-```
+# Prepare attribute table
+re <- reach_enriched %>%
+  mutate(
+    dam_id = as.character(dam_id),
+    dam_type = as.character(dam_type),
+    cascade_level = as.integer(cascade_level)
+  )
 
-```{r}
-#| label: debug-ds-us
+# Split future/current attributes
+re_future <- re %>% filter(dam_type == "future")
+re_current <- re %>% filter(dam_type == "current")
 
-# Look at the downstream dam table (future -> current).
-head(dbg$ds_dam_all, 20)
+# Spatial layers (WGS84)
+basin_wgs  <- st_transform(out$basin_poly, 4326)
+rivers_wgs <- st_transform(out$rivers_cropped, 4326)
 
-# Look at the upstream dam table (current -> future).
-head(dbg$us_dam_all, 20)
-```
+current_wgs <- out$dams_current_cropped %>%
+  mutate(dam_id = as.character(dam_id)) %>%
+  left_join(re_current, by = "dam_id", suffix = c("", ".re")) %>%
+  st_transform(4326)
 
-```{r}
-#| label: debug-bb
+future_wgs <- out$dams_future_cropped %>%
+  mutate(dam_id = as.character(dam_id)) %>%
+  inner_join(re_future, by = "dam_id", suffix = c("", ".re")) %>%
+  st_transform(4326)
 
-# Node -> bb_id mapping (trunk assignment).
-head(dbg$node_bb, 20)
+# ---- UTF-8 + HTML safety for leaflet payload ----
+fix_utf8 <- function(x) {
+  if (!is.character(x)) return(x)
+  y <- iconv(x, from = "", to = "UTF-8", sub = "")
+  y[is.na(y)] <- ""
+  y
+}
 
-# Future dam -> bb_id.
-head(dbg$future_trunks, 20)
+current_wgs <- current_wgs %>% mutate(across(where(is.character), fix_utf8))
+future_wgs  <- future_wgs  %>% mutate(across(where(is.character), fix_utf8))
 
-# Current dam -> bb_id.
-head(dbg$current_trunks, 20)
-```
+esc <- function(x) htmltools::htmlEscape(as.character(x))
 
-```{r}
-#| label: debug-trunk-graph
+# Color future by cascade level
+pal <- colorFactor(
+  palette = c(
+    "0" = "#9E9E9E",  # no cascade
+    "1" = "#A0FCA0",
+    "2" = "#63BD5D",
+    "3" = "#255915"
+  ),
+  domain = as.character(sort(unique(future_wgs$cascade_level))),
+  na.color = "#BDBDBD"
+)
 
-# Look at trunk adjacency edges inferred at confluences.
-head(dbg$trunk_edges, 50)
+future_popup <- sprintf(
+  paste0(
+    "<b>Future dam</b><br/>dam_id: %s<br/>project: %s<br/>",
+    "cascade_level: %s<br/>us_trunks_away: %s<br/>",
+    "has_upstream: %s<br/>has_downstream: %s<br/>",
+    "min_up_km: %s<br/>min_down_km: %s<br/>csi: %s"
+  ),
+  esc(future_wgs$dam_id),
+  esc(if ("project_name" %in% names(future_wgs)) future_wgs$project_name else NA_character_),
+  esc(future_wgs$cascade_level),
+  esc(future_wgs$us_trunks_away),
+  esc(future_wgs$has_current_upstream),
+  esc(future_wgs$has_current_downstream),
+  esc(round(future_wgs$min_distance_upstream_km, 2)),
+  esc(round(future_wgs$min_distance_downstream_km, 2)),
+  esc(round(future_wgs$csi, 2))
+)
 
-# Trunk graph summary.
-dbg$g_trunk
+current_popup <- sprintf(
+  "<b>Current dam</b><br/>dam_id: %s<br/>name: %s",
+  esc(current_wgs$dam_id),
+  esc(if ("dam_name" %in% names(current_wgs)) current_wgs$dam_name else NA_character_)
+)
+
+current_popup <- sprintf(
+  "<b>Current dam</b><br/>dam_id: %s<br/>name: %s",
+  current_wgs$dam_id,
+  if ("dam_name" %in% names(current_wgs)) current_wgs$dam_name else NA_character_
+)
+
+leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(
+    data = basin_wgs,
+    color = "#222222", weight = 1.5, fill = FALSE,
+    group = "Basin"
+  ) %>%
+  addPolylines(
+    data = rivers_wgs,
+    color = "#4C78A8", weight = 1, opacity = 0.5,
+    group = "Rivers"
+  ) %>%
+  addCircleMarkers(
+    data = current_wgs,
+    radius = 3.5, weight = 1,
+    color = "red", fillColor = "red", fillOpacity = 0.85,
+    popup = current_popup,
+    group = "Current dams"
+  ) %>%
+  addCircleMarkers(
+    data = future_wgs,
+    radius = 5, weight = 1,
+    color = ~pal(as.character(cascade_level)),
+    fillColor = ~pal(as.character(cascade_level)),
+    fillOpacity = 0.95,
+    popup = future_popup,
+    group = "Future dams"
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = pal,
+    values = as.character(future_wgs$cascade_level),
+    title = "Future dam cascade_level",
+    opacity = 1
+  ) %>%
+  addLayersControl(
+    overlayGroups = c("Basin", "Rivers", "Current dams", "Future dams"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addScaleBar(position = "bottomleft") %>%
+  fitBounds(
+    lng1 = st_bbox(basin_wgs)[["xmin"]],
+    lat1 = st_bbox(basin_wgs)[["ymin"]],
+    lng2 = st_bbox(basin_wgs)[["xmax"]],
+    lat2 = st_bbox(basin_wgs)[["ymax"]]
+  )
 ```
 
