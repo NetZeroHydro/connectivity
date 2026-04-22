@@ -24,19 +24,19 @@ east_as_pa <- left_join(east_as, future_dams_flagged, by = 'dam_id')
 # Fix the Data 
 east_as_pa <- east_as_pa %>%
   mutate(connectivity_category = case_when(
-    # (1) Both within 250km
+    # (1) In cascade, no threshold 
     cascade_level == 1 ~ "cascade1",
     cascade_level == 2 ~ "cascade2",
     cascade_level >= 3 ~ "cascade3+",
     # (2) No dams in either direction OR both further than 200km
-    (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) &
-      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "FFR",
+    (is.na(min_distance_upstream_km) | min_distance_upstream_km > 200) &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 200) ~ "FFR",
     # (3) Upstream dam within 200km, no downstream or downstream > 200km
-    min_distance_upstream_km <= 70 &
-      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "downstream",
+    min_distance_upstream_km <= 200 &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 200) ~ "downstream",
     # (4) Downstream dam within 200km, no upstream or upstream > 200km
-    min_distance_downstream_km <= 70 &
-      (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) ~ "upstream",
+    min_distance_downstream_km <= 200 &
+      (is.na(min_distance_upstream_km) | min_distance_upstream_km > 200) ~ "upstream",
     TRUE ~ NA
   )) %>% 
   mutate(connectivity_category_num = case_when(
@@ -137,9 +137,9 @@ cat_interactive_leaflet <- leaflet(data = results_sf ) %>%
     group = "circles",
     position = "topright" 
   )
+cat_interactive_leaflet
 
-
-saveWidget(cat_interactive_leaflet, file = here::here("figs", "cat_interactive_leaflet.html"))
+#saveWidget(cat_interactive_leaflet, file = here::here("cat_interactive_leaflet.html"))
       
 ```
 
@@ -148,6 +148,9 @@ Interactive Ggplot
 ```{r}
 library(ggplot2)
 library(plotly)
+
+# Create threshold text 
+text <- "The cascades have no threshold.\nThe other connectivity catagories have a 200km threshold."
 
 # GGplot 
 wms_ggmap_cat <- ggplot() +
@@ -165,7 +168,9 @@ wms_ggmap_cat <- ggplot() +
   scale_color_manual(values = connectivity_cat_pal)+
   theme_void() + 
   labs(title = "Connectivity Catagories for Future Dams in Southeast Asia", 
-       color = "Connectivity Catagories")
+       color = "Connectivity Catagories") + 
+    annotate(geom = "text", x = 115, y = 5, label = text, size = 2, hjust = 0)
+
 
 con_cat_ggmap_interactive <- ggplotly(wms_ggmap_cat, 
          tooltip = "text" # inside of hover tool tip
@@ -173,10 +178,10 @@ con_cat_ggmap_interactive <- ggplotly(wms_ggmap_cat,
 
 con_cat_ggmap_interactive
 
-htmlwidgets::saveWidget(
-  ggplotly(wms_ggmap_interactive, tooltip = "text"),
-  file = here::here("figs", "cat_interactive_plot.html")
-)
+# htmlwidgets::saveWidget(
+#   ggplotly(con_cat_ggmap_interactive, tooltip = "text"),
+#   file = here::here("cat_interactive_plot.html")
+# )
 
 ```
 
