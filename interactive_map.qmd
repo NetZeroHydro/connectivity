@@ -2,13 +2,46 @@
 title: "interactive_map"
 format: html
 ---
+```{r}
+basin_sf_africa <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev4/hybas_af_lev04_v1c/hybas_af_lev04_v1c.shp") |>
+  clean_names()
+
+basin_sf_as <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev4/hybas_as_lev04_v1c/hybas_as_lev04_v1c.shp") |>
+  clean_names() %>% 
+  st_make_valid()
+
+ggplot(basin_sf_africa) + 
+  geom_sf()
+
+# --- 
+river_filter <- world_rivers_ffr %>% 
+  filter(ord_stra >= 5 & 
+           continent == "Asia")
+
+# ---- 
+combined <- basin_sf_as %>%
+  group_by(main_bas) %>%
+  summarize()
+
+# --- 
+#tmap_mode("plot")
+
+tm_shape(combined) + 
+  tm_polygons(fill = 'main_bas') 
+
+tm_shape(river_filter) + 
+  tm_lines(col = 'main_riv')
+
+```
+
+
 
 ## Load & Wrangle Data 
 ```{r}
 # Load data 
 east_as <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/se_as_basin_df.rds")
 east_as <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1//raf_presentation_df.rds")
-east_as_basin_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_as_lev02_v1c/hybas_as_lev02_v1c.shp") |>
+east_as_basin_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_as_lev02_v1c/hybas_as_lev02_v1c.shp") |>
   janitor::clean_names() %>% 
   filter(hybas_id == 4020015090) %>% 
   st_transform(crs = 4326)
