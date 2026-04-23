@@ -49,31 +49,31 @@ world_rivers_ffr <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v
 
 # Hybas polygons to use LEVEL 3
 
-basin_sf_africa <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev3/hybas_af_lev03_v1c/hybas_af_lev03_v1c.shp") |>
+basin_sf_africa <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_af_lev02_v1c/hybas_af_lev02_v1c.shp") |>
   clean_names()
 
-# basin_sf_Artctic <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev3/hybas_ar_lev03_v1c/hybas_ar_lev03_v1c.shp") |>
-#   clean_names()
-
-basin_sf_Asia <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev3/hybas_as_lev03_v1c/hybas_as_lev03_v1c.shp") |>
+basin_sf_Artctic <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_ar_lev02_v1c/hybas_ar_lev02_v1c.shp") |>
   clean_names()
 
-basin_sf_Aust <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev3/hybas_au_lev03_v1c/hybas_au_lev03_v1c.shp") |>
+basin_sf_Asia <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_as_lev02_v1c/hybas_as_lev02_v1c.shp") |>
   clean_names()
 
-basin_sf_Europe_MidEast <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev3/hybas_eu_lev03_v1c/hybas_eu_lev03_v1c.shp") |>
+basin_sf_Aust <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_au_lev02_v1c/hybas_au_lev02_v1c.shp") |>
   clean_names()
 
-basin_sf_Greenland <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev3/hybas_gr_lev03_v1c/hybas_gr_lev03_v1c.shp") |>
+basin_sf_Europe_MidEast <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_eu_lev02_v1c/hybas_eu_lev02_v1c.shp") |>
   clean_names()
 
-basin_sf_NorthCentAmerica <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev3/hybas_na_lev03_v1c/hybas_na_lev03_v1c.shp") |>
+basin_sf_Greenland <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_gr_lev02_v1c/hybas_gr_lev02_v1c.shp") |>
   clean_names()
 
-basin_sf_SouthAmerica <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev3/hybas_as_lev03_v1c/hybas_as_lev03_v1c.shp") |>
+basin_sf_NorthCentAmerica <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_na_lev02_v1c/hybas_na_lev02_v1c.shp") |>
   clean_names()
 
-basin_sf_Siberia <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev3/hybas_si_lev03_v1c/hybas_si_lev03_v1c.shp") |>
+basin_sf_SouthAmerica <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_as_lev02_v1c/hybas_as_lev02_v1c.shp") |>
+  clean_names()
+
+basin_sf_Siberia <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_si_lev02_v1c/hybas_si_lev02_v1c.shp") |>
   clean_names()
 
 
@@ -98,7 +98,7 @@ Prepping the Loop
 ```{r}
 #| label: gathering-HYBAS-data
 # List basins 
-basin_list <- list(basin_sf_africa, basin_sf_Asia, basin_sf_Aust, basin_sf_Europe, basin_sf_midEast, basin_sf_Greenland, basin_sf_NorthCentAmerica, basin_sf_SouthAmerica, basin_sf_Siberia)
+basin_list <- list(basin_sf_africa, basin_sf_Asia, basin_sf_Artctic, basin_sf_Aust, basin_sf_Europe, basin_sf_midEast, basin_sf_Greenland, basin_sf_NorthCentAmerica, basin_sf_SouthAmerica, basin_sf_Siberia)
 ```
 
 
