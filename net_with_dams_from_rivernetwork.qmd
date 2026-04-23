@@ -65,24 +65,14 @@ ord_stra_min <- 1L
 blend_tolerance_m <- 5000
 
 # Distance (metres) used to remove FHReD dams that are already represented
-fhred_overlap_tolerance_m <- 500
+fhred_overlap_tolerance_m <- 5000
   
   # 6050 for 205 removed from GDW$orig_src == FHReD
 
 # Optional subset for testing:
 # - NULL = all rivers
 # - numeric/id value = keep only rows with this main_riv
-main_riv_filter <- NULL # Mekong 41392598
-```
-
-```{r}
-#| label: main-riv-dist
-#| message: false
-
-rivers_for_main_riv_dist <- world_rivers_ffr %>%
-  dplyr::filter(.data$ord_stra > ord_stra_min)
-
-
+main_riv_filter <- 41392598 # Mekong 41392598
 ```
 
 ```{r}

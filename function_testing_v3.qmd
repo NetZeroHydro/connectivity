@@ -1,0 +1,156 @@
+---
+title: "Function testing v3"
+format: html
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r}
+#| label: setup
+#| message: false
+#| warning: false
+
+library(sf)
+library(dplyr)
+library(tidygraph)
+library(leaflet)
+
+source("connectivity_function_v3.R")
+```
+
+```{r}
+#| label: run-connectivity-v3
+#| message: false
+#| warning: false
+
+# Expects `out$net_with_dams` already in memory
+if (!exists("out") || is.null(out$net_with_dams)) {
+  stop("Missing `out$net_with_dams` in environment.", call. = FALSE)
+}
+
+# Edit these thresholds (km)
+threshold_downstream_km <- Inf
+threshold_upstream_km <- Inf
+threshold_cascade_km <- Inf
+
+conn_v3 <- connectivity_from_network(
+  net_with_dams = out$net_with_dams,
+  threshold_downstream_km = threshold_downstream_km,
+  threshold_upstream_km = threshold_upstream_km,
+  threshold_cascade_km = threshold_cascade_km
+)
+
+reach_df <- conn_v3$reach_df
+debug <- conn_v3$debug
+```
+
+```{r}
+#| label: prep-map-data
+#| message: false
+#| warning: false
+
+edges_map <- out$net_with_dams %>%
+  tidygraph::activate("edges") %>%
+  sf::st_as_sf() %>%
+  st_transform(4326)
+
+nodes_map <- out$net_with_dams %>%
+  tidygraph::activate("nodes") %>%
+  sf::st_as_sf() %>%
+  dplyr::filter(!is.na(dam_id)) %>%
+  dplyr::left_join(reach_df, by = "dam_id") %>%
+  st_transform(4326)
+
+current_nodes <- nodes_map %>% dplyr::filter(is_current_dam %in% TRUE)
+future_nodes <- nodes_map %>% dplyr::filter(is_current_dam %in% FALSE)
+
+future_nodes <- future_nodes %>%
+  dplyr::mutate(category_map = connectivity_category)
+
+category_levels <- c("FFR", "upstream", "downstream", "cascade_classic", "cascade1", "cascade2", "cascade3+")
+category_colors <- c(
+  "FFR" = "#ff5615",
+  "upstream" = "#ffa946",
+  "downstream" = "#eada31",
+  "cascade_classic" = "#015A00",
+  "cascade1" = "#63bd5d",
+  "cascade2" = "#a0fca0",
+  "cascade3+" = "#c0f7c0"
+)
+
+# Discrete palette for river trunks (bb_id).
+trunk_pal <- leaflet::colorFactor(
+  palette = "Set3",
+  domain = sort(unique(as.character(edges_map$bb_id))),
+  na.color = "#8f8f8f"
+)
+
+
+m <- leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolylines(
+    data = edges_map,
+       color = ~trunk_pal(as.character(bb_id)), # Adjust network line sizes
+    weight = 2.6,
+    opacity = 0.65,
+    group = "River edges",
+    popup = ~paste0("bb_id: ", bb_id)
+  ) %>%
+  addCircleMarkers(
+    data = current_nodes,
+    radius = 4,
+    stroke = FALSE, # Adjust current dams
+    color = "#8f8f8f",
+    fillColor = "#8f8f8f",
+    fillOpacity = 0.9,
+    group = "Current dams",
+    popup = ~paste0("Current dam<br>dam_id: ", dam_id, "<br>bb_id: ", bb_id)
+  )
+
+for (cat_name in category_levels) {
+  cat_data <- future_nodes %>% dplyr::filter(category_map == cat_name)
+  if (nrow(cat_data) > 0) {
+    m <- m %>%
+      addCircleMarkers(
+        data = cat_data,
+        radius = 5, # Adjust future dams
+        stroke = FALSE,
+        color = category_colors[[cat_name]],
+        fillColor = category_colors[[cat_name]],
+        fillOpacity = 0.9,
+        group = paste0("Future: ", cat_name),
+        popup = ~paste0(
+          "Future dam<br>dam_id: ", dam_id,
+          "<br>category: ", category_map,
+          "<br>cascade_level: ", cascade_level,
+          "<br>up_dam: ", dam_id_up,
+          "<br>up_km: ", round(min_distance_upstream_km, 2),
+          "<br>up_hops: ", upstream_hops,
+          "<br>down_dam: ", dam_id_down,
+          "<br>down_km: ", round(min_distance_downstream_km, 2),
+          "<br>down_hops: ", downstream_hops
+        )
+      )
+  }
+}
+
+m %>%
+  addLayersControl(
+    overlayGroups = c(
+      "River edges",
+      "Current dams",
+      paste0("Future: ", category_levels)
+    ),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    colors = unname(category_colors),
+    labels = names(category_colors),
+    title = "Future connectivity category",
+    opacity = 1
+  ) %>%
+  addScaleBar(position = "bottomleft")
+```
+
+
