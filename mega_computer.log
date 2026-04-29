@@ -1,0 +1,328 @@
+Linking to GEOS 3.10.2, GDAL 3.4.1, PROJ 8.2.1; sf_use_s2() is TRUE
+
+Attaching package: ‘tidygraph’
+
+The following object is masked from ‘package:stats’:
+
+    filter
+
+
+Attaching package: ‘dplyr’
+
+The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+
+Attaching package: ‘janitor’
+
+The following objects are masked from ‘package:stats’:
+
+    chisq.test, fisher.test
+
+
+Attaching package: ‘igraph’
+
+The following objects are masked from ‘package:dplyr’:
+
+    as_data_frame, groups, union
+
+The following object is masked from ‘package:tidygraph’:
+
+    groups
+
+The following objects are masked from ‘package:stats’:
+
+    decompose, spectrum
+
+The following object is masked from ‘package:base’:
+
+    union
+
+Loading GDW...
+Loading world_rivers_ffr...
+Loading FHReD...
+New names:
+• `` -> `...16`
+• `` -> `...17`
+• `` -> `...18`
+• `` -> `...19`
+• `` -> `...20`
+FHReD removed by overlap: 190
+Total main_riv partitions: 100
+Processing main_riv: 10000001
+  skip main_riv 10000001 (too few river rows)
+Processing main_riv: 10000002
+  skip main_riv 10000002 (too few river rows)
+Processing main_riv: 10000009
+Processing main_riv: 10000005
+  skip main_riv 10000005 (too few river rows)
+Processing main_riv: 10000006
+  skip main_riv 10000006 (too few river rows)
+Processing main_riv: 10000007
+Processing main_riv: 10000010
+  skip main_riv 10000010 (too few river rows)
+Processing main_riv: 10000030
+  threshold km: 10
+  threshold km: 20
+  threshold km: 50
+  threshold km: 100
+  threshold km: 250
+  threshold km: Inf
+Processing main_riv: 10000023
+  skip main_riv 10000023 (too few river rows)
+Processing main_riv: 10000027
+Processing main_riv: 10000035
+Processing main_riv: 10000038
+  skip main_riv 10000038 (too few river rows)
+Processing main_riv: 10000040
+  skip main_riv 10000040 (too few river rows)
+Processing main_riv: 10000046
+Processing main_riv: 10000060
+  skip main_riv 10000060 (too few river rows)
+Processing main_riv: 10000062
+Processing main_riv: 10000075
+  threshold km: 10
+  threshold km: 20
+  threshold km: 50
+  threshold km: 100
+  threshold km: 250
+  threshold km: Inf
+Processing main_riv: 10000117
+  threshold km: 10
+  threshold km: 20
+  threshold km: 50
+  threshold km: 100
+  threshold km: 250
+  threshold km: Inf
+Processing main_riv: 10000095
+  skip main_riv 10000095 (too few river rows)
+Processing main_riv: 10000098
+Processing main_riv: 10000108
+  skip main_riv 10000108 (too few river rows)
+Processing main_riv: 10000116
+  skip main_riv 10000116 (too few river rows)
+Processing main_riv: 10000122
+  skip main_riv 10000122 (too few river rows)
+Processing main_riv: 10000128
+  skip main_riv 10000128 (too few river rows)
+Processing main_riv: 10000129
+  skip main_riv 10000129 (too few river rows)
+Processing main_riv: 10000162
+  threshold km: 10
+  threshold km: 20
+  threshold km: 50
+  threshold km: 100
+  threshold km: 250
+  threshold km: Inf
+Processing main_riv: 10000148
+  skip main_riv 10000148 (too few river rows)
+Processing main_riv: 10000151
+Processing main_riv: 10000156
+  skip main_riv 10000156 (too few river rows)
+Processing main_riv: 10000161
+  threshold km: 10
+  threshold km: 20
+  threshold km: 50
+  threshold km: 100
+  threshold km: 250
+  threshold km: Inf
+Processing main_riv: 10000163
+  skip main_riv 10000163 (too few river rows)
+Processing main_riv: 10000164
+  skip main_riv 10000164 (too few river rows)
+Processing main_riv: 10000172
+  skip main_riv 10000172 (too few river rows)
+Processing main_riv: 10000178
+  skip main_riv 10000178 (too few river rows)
+Processing main_riv: 10000213
+Processing main_riv: 10000188
+  skip main_riv 10000188 (too few river rows)
+Processing main_riv: 10000194
+Processing main_riv: 10000195
+  skip main_riv 10000195 (too few river rows)
+Processing main_riv: 10000198
+  skip main_riv 10000198 (too few river rows)
+Processing main_riv: 10000199
+  skip main_riv 10000199 (too few river rows)
+Processing main_riv: 10000200
+Processing main_riv: 10000202
+Processing main_riv: 10000203
+  skip main_riv 10000203 (too few river rows)
+Processing main_riv: 10000208
+Processing main_riv: 10000226
+Processing main_riv: 10000229
+  skip main_riv 10000229 (too few river rows)
+Processing main_riv: 10000236
+Processing main_riv: 10000252
+  skip main_riv 10000252 (too few river rows)
+Processing main_riv: 10000253
+  skip main_riv 10000253 (too few river rows)
+Processing main_riv: 10000269
+Processing main_riv: 10000274
+  skip main_riv 10000274 (too few river rows)
+Processing main_riv: 10000275
+  skip main_riv 10000275 (too few river rows)
+Processing main_riv: 10000276
+  skip main_riv 10000276 (too few river rows)
+Processing main_riv: 10000278
+  skip main_riv 10000278 (too few river rows)
+Processing main_riv: 10000279
+  skip main_riv 10000279 (too few river rows)
+Processing main_riv: 10000282
+  skip main_riv 10000282 (too few river rows)
+Processing main_riv: 10000295
+Processing main_riv: 10000286
+  skip main_riv 10000286 (too few river rows)
+Processing main_riv: 10000301
+  skip main_riv 10000301 (too few river rows)
+Processing main_riv: 10000304
+  threshold km: 10
+  threshold km: 20
+  threshold km: 50
+  threshold km: 100
+  threshold km: 250
+  threshold km: Inf
+Processing main_riv: 10000309
+  skip main_riv 10000309 (too few river rows)
+Processing main_riv: 10000310
+Processing main_riv: 10000311
+  skip main_riv 10000311 (too few river rows)
+Processing main_riv: 10000319
+  skip main_riv 10000319 (too few river rows)
+Processing main_riv: 10000320
+  threshold km: 10
+  threshold km: 20
+  threshold km: 50
+  threshold km: 100
+  threshold km: 250
+  threshold km: Inf
+Processing main_riv: 10000322
+  threshold km: 10
+  threshold km: 20
+  threshold km: 50
+  threshold km: 100
+  threshold km: 250
+  threshold km: Inf
+Processing main_riv: 10000328
+  skip main_riv 10000328 (too few river rows)
+Processing main_riv: 10000336
+  skip main_riv 10000336 (too few river rows)
+Processing main_riv: 10000339
+  skip main_riv 10000339 (too few river rows)
+Processing main_riv: 10000345
+  skip main_riv 10000345 (too few river rows)
+Processing main_riv: 10000346
+  skip main_riv 10000346 (too few river rows)
+Processing main_riv: 10000351
+Processing main_riv: 10000361
+  skip main_riv 10000361 (too few river rows)
+Processing main_riv: 10000362
+  skip main_riv 10000362 (too few river rows)
+Processing main_riv: 10000363
+  skip main_riv 10000363 (too few river rows)
+Processing main_riv: 10000376
+  threshold km: 10
+  threshold km: 20
+  threshold km: 50
+  threshold km: 100
+  threshold km: 250
+  threshold km: Inf
+Processing main_riv: 10000375
+  skip main_riv 10000375 (too few river rows)
+Processing main_riv: 10000388
+  skip main_riv 10000388 (too few river rows)
+Processing main_riv: 10000389
+Processing main_riv: 10000469
+Processing main_riv: 10000396
+  skip main_riv 10000396 (too few river rows)
+Processing main_riv: 10000397
+  skip main_riv 10000397 (too few river rows)
+Processing main_riv: 10000398
+  skip main_riv 10000398 (too few river rows)
+Processing main_riv: 10000402
+  threshold km: 10
+  threshold km: 20
+  threshold km: 50
+  threshold km: 100
+  threshold km: 250
+  threshold km: Inf
+Processing main_riv: 10000803
+  threshold km: 10
+  threshold km: 20
+  threshold km: 50
+  threshold km: 100
+  threshold km: 250
+  threshold km: Inf
+Processing main_riv: 10000415
+  skip main_riv 10000415 (too few river rows)
+Processing main_riv: 10000616
+Processing main_riv: 10000429
+  skip main_riv 10000429 (too few river rows)
+Processing main_riv: 10000430
+  skip main_riv 10000430 (too few river rows)
+Processing main_riv: 10000563
+Processing main_riv: 10000447
+  skip main_riv 10000447 (too few river rows)
+Processing main_riv: 10000449
+  skip main_riv 10000449 (too few river rows)
+Processing main_riv: 10000459
+  threshold km: 10
+  threshold km: 20
+  threshold km: 50
+  threshold km: 100
+  threshold km: 250
+  threshold km: Inf
+Processing main_riv: 10000461
+Processing main_riv: 10000478
+Processing main_riv: 10000485
+  skip main_riv 10000485 (too few river rows)
+Processing main_riv: 10000486
+  skip main_riv 10000486 (too few river rows)
+Processing main_riv: 10000487
+Processing main_riv: 10000496
+  skip main_riv 10000496 (too few river rows)
+Processing main_riv: 10000498
+  threshold km: 10
+  threshold km: 20
+  threshold km: 50
+  threshold km: 100
+  threshold km: 250
+  threshold km: Inf
+There were 16 warnings (use warnings() to see them)
+Saved network/workflow bundle: /capstone/netzerohydro/data/processed_data/out_world_net_with_dams.rds
+Saved: /capstone/netzerohydro/data/processed_data/reach_enriched_threshold_10km.rds (rows=0)
+Saved: /capstone/netzerohydro/data/processed_data/reach_enriched_threshold_20km.rds (rows=0)
+Saved: /capstone/netzerohydro/data/processed_data/reach_enriched_threshold_50km.rds (rows=0)
+Saved: /capstone/netzerohydro/data/processed_data/reach_enriched_threshold_100km.rds (rows=0)
+Saved: /capstone/netzerohydro/data/processed_data/reach_enriched_threshold_250km.rds (rows=0)
+Saved: /capstone/netzerohydro/data/processed_data/reach_enriched_threshold_Infkm.rds (rows=0)
+Saved combined: /capstone/netzerohydro/data/processed_data/reach_enriched_all_thresholds.rds (rows=0)
+Done.
+	Command being timed: "/opt/R/4.5.0/bin/Rscript mega_computer.R"
+	User time (seconds): 414.50
+	System time (seconds): 21.53
+	Percent of CPU this job got: 100%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 7:12.40
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 20840884
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 13920778
+	Voluntary context switches: 2497
+	Involuntary context switches: 145440
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 1582688
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

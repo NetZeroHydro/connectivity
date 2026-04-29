@@ -1,10 +1,10 @@
-# install.packages("sfnetworks")
-# install.packages("sf")
-# install.packages("tidygraph")
-# install.packages("dpylr")
-# install.packages("readr")
-# install.packages("janitor")
-# install.packages("igraph")
+install.packages("sfnetworks")
+install.packages("sf")
+install.packages("tidygraph")
+install.packages("dpylr")
+install.packages("readr")
+install.packages("janitor")
+install.packages("igraph")
 
 
   library(sf)
@@ -40,12 +40,12 @@ thresholds_km <- c(10, 20, 50, 100, 250, Inf)
 edge_attr_cols <- c("csi", "bas_name", "main_riv", "hyriv_id")
 
 # Output
-output_dir <- "/capstone/netzerohydro/data/processed_data"
+output_dir <- "/home/meganhessel/processed_data"
 out_net_path <- file.path(output_dir, "out_world_net_with_dams.rds")
 write_combined <- TRUE
 
 # Safety test (how many main_rivs to run) NULL for world
-max_main_riv <- 100
+max_main_riv <- NULL
 
 # =============================================================================
 # FUNCTIONS
