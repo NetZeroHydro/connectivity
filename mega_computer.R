@@ -27,7 +27,7 @@ path_fhred_csv <- "/capstone/netzerohydro/data/raw/FHReD_2015_future_dams/FHReD_
 
 # Optional filter.
 main_riv_filter <- NULL
-ord_stra_min <- 1L
+ord_stra_min <- 0L # 1 does not include 1s...
 
 # Dedupe / blending tolerances (meters)
 fhred_overlap_tolerance_m <- 500
@@ -45,7 +45,7 @@ out_net_path <- file.path(output_dir, "out_world_net_with_dams.rds")
 write_combined <- TRUE
 
 # Safety test (how many main_rivs to run) NULL for world
-max_main_riv <- 5
+max_main_riv <- 100
 
 # =============================================================================
 # FUNCTIONS
@@ -103,6 +103,21 @@ main_riv_dist <- rivers_filtered %>%
 # =============================================================================
 
 crs_r <- sf::st_crs(rivers_filtered)
+
+current_dams_gdw <- gdw %>%
+  sf::st_make_valid()
+
+if (sf::st_crs(current_dams_gdw) != crs_r) {
+  current_dams_gdw <- sf::st_transform(current_dams_gdw, crs_r)
+}
+
+future_dams_sf <- future_dams_raw %>%
+  sf::st_as_sf(coords = c("lon_cleaned", "lat_cleaned"), crs = 4326, remove = FALSE) %>%
+  sf::st_make_valid()
+
+if (sf::st_crs(future_dams_sf) != crs_r) {
+  future_dams_sf <- sf::st_transform(future_dams_sf, crs_r)
+}
 
 current_dams_gdw <- gdw %>%
   sf::st_make_valid() %>%
@@ -195,9 +210,21 @@ for (r in main_riv_values) {
   rivers_b <- rivers_filtered %>% dplyr::filter(.data$main_riv == r)
   if (nrow(rivers_b) == 0L) next
   
-  net_b <- sfnetworks::as_sfnetwork(rivers_b, directed = TRUE) %>%
-    tidygraph::activate("edges") %>%
-    dplyr::mutate(weight = sfnetworks::edge_length())
+  if (nrow(rivers_b) < 2L) { # Choosing to skip main_riv if has 0 or 1 linestrings which cant make network
+    message("  skip main_riv ", r, " (too few river rows)")
+    next
+  }
+  
+  net_b <- tryCatch(
+    sfnetworks::as_sfnetwork(rivers_b, directed = TRUE) %>%
+      tidygraph::activate("edges") %>%
+      dplyr::mutate(weight = sfnetworks::edge_length()),
+    error = function(e) {
+      message("  skip main_riv ", r, " (as_sfnetwork failed): ", conditionMessage(e))
+      NULL
+    }
+  )
+  if (is.null(net_b)) next
   
   # subset dams near this basin's rivers
   idx_cur <- sf::st_nearest_feature(current_dams_gdw, rivers_b)
@@ -209,15 +236,24 @@ for (r in main_riv_values) {
   dams_cur_b <- current_dams_gdw[as.numeric(nearest_cur) <= blend_tolerance_m, , drop = FALSE]
   dams_fut_b <- dams_future_fhred_clean[as.numeric(nearest_fut) <= blend_tolerance_m, , drop = FALSE]
   
-  all_dams_b <- dplyr::bind_rows(
-    dams_fut_b %>% dplyr::transmute(dam_id = .data$dam_id, is_current_dam = .data$is_current_dam, geometry = sf::st_geometry(.)),
-    dams_cur_b %>% dplyr::transmute(dam_id = .data$dam_id, is_current_dam = .data$is_current_dam, geometry = sf::st_geometry(.))
+  dams_fut_b_small <- dams_fut_b %>%
+    dplyr::select(dam_id, is_current_dam)
+  
+  dams_cur_b_small <- dams_cur_b %>%
+    dplyr::select(dam_id, is_current_dam)
+  
+  parts <- Filter(function(x) nrow(x) > 0, list(dams_fut_b_small, dams_cur_b_small))
+  if (length(parts) == 0L) next
+  
+  all_dams_b <- do.call(rbind, parts) 
+  net_with_dams_b <- tryCatch(
+    sfnetworks::st_network_blend(net_b, all_dams_b, tolerance = blend_tolerance_m),
+    error = function(e) {
+      message("  skip main_riv ", r, " (blend failed): ", conditionMessage(e))
+      NULL
+    }
   )
-  
-  if (nrow(all_dams_b) == 0L) next
-  
-  all_dams_b <- sf::st_as_sf(all_dams_b, sf_column_name = "geometry", crs = crs_r)
-  net_with_dams_b <- sfnetworks::st_network_blend(net_b, all_dams_b, tolerance = blend_tolerance_m)
+  if (is.null(net_with_dams_b)) next
   
   for (t in thresholds_km) {
     t_label <- as.character(t)
@@ -275,3 +311,4 @@ if (isTRUE(write_combined)) {
 }
 
 message("Done.")
+
