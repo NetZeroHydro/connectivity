@@ -1,10 +1,10 @@
-install.packages("sfnetworks")
-install.packages("sf")
-install.packages("tidygraph")
-install.packages("dpylr")
-install.packages("readr")
-install.packages("janitor")
-install.packages("igraph")
+# install.packages("sfnetworks")
+# install.packages("sf")
+# install.packages("tidygraph")
+# install.packages("dpylr")
+# install.packages("readr")
+# install.packages("janitor")
+# install.packages("igraph")
 
 
   library(sf)
@@ -20,10 +20,10 @@ install.packages("igraph")
 # =============================================================================
 
 # Input paths (absolute paths with leading /)
-path_gdw_gdb <- "/home/netzerohydro/GDW_v1_0.gdb"
+path_gdw_gdb <- "/capstone/netzerohydro/data/raw/GDW/GDW_v1_0.gdb"
 layer_gdw <- "GDW_barriers_v1_0"
-path_rivers_rds <- "/home/netzerohydro/world_rivers_ffr.rds"
-path_fhred_csv <- "/home/netzerohydro/FHReD_2015_future_dams_Zarfl_et_al_beta_version.csv"
+path_rivers_rds <- "/capstone/netzerohydro/data/cleaned_v1/world_rivers_ffr.rds"
+path_fhred_csv <- "/capstone/netzerohydro/data/raw/FHReD_2015_future_dams/FHReD_2015_future_dams_Zarfl_et_al_beta_version.csv"
 
 # Optional filter.
 main_riv_filter <- NULL
@@ -40,18 +40,16 @@ thresholds_km <- c(10, 20, 50, 100, 250, Inf)
 edge_attr_cols <- c("csi", "bas_name", "main_riv", "hyriv_id")
 
 # Output
-output_dir <- "/home/netzerohydro/outputs"
+output_dir <- "/capstone/netzerohydro/data/processed_data"
 out_net_path <- file.path(output_dir, "out_world_net_with_dams.rds")
 write_combined <- TRUE
 
-# Safety knobs
-max_main_bas <- NULL  # e.g., 50 for smoke test, NULL for all
+# Safety test (how many main_rivs to run) NULL for world
+max_main_riv <- 5
 
 # =============================================================================
-# PASTED FUNCTIONS
+# FUNCTIONS
 # =============================================================================
-# Use the pasted function logic files directly. If needed on HPC, replace these
-# with absolute paths to your pasted-function copies.
 source("connectivity_function_v3.R")
 source("add_ffr_attr.R")
 
@@ -89,8 +87,8 @@ if (nrow(rivers_filtered) == 0L) {
   stop("No rivers left after filters. Check ord_stra/main_riv settings.", call. = FALSE)
 }
 
-if (!"main_bas" %in% names(rivers_filtered)) {
-  stop("`main_bas` is required on rivers for world-scale partitioning.", call. = FALSE)
+if (!"main_riv" %in% names(rivers_filtered)) {
+  stop("`main_riv` is required on rivers for world-scale partitioning.", call. = FALSE)
 }
 
 main_riv_dist <- rivers_filtered %>%
@@ -177,24 +175,24 @@ dam_extra_tbl <- dplyr::bind_rows(fhred_extra, gdw_extra) %>%
 # Iterate by main_bas + thresholds
 # =============================================================================
 
-main_bas_values <- rivers_filtered %>%
+main_riv_values <- rivers_filtered %>%
   sf::st_drop_geometry() %>%
-  dplyr::distinct(.data$main_bas) %>%
-  dplyr::pull(.data$main_bas)
+  dplyr::distinct(.data$main_riv) %>%
+  dplyr::pull(.data$main_riv)
 
-main_bas_values <- main_bas_values[!is.na(main_bas_values)]
-if (!is.null(max_main_bas)) {
-  main_bas_values <- head(main_bas_values, max_main_bas)
+main_riv_values <- main_riv_values[!is.na(main_riv_values)]
+if (!is.null(max_main_riv)) {
+  main_riv_values <- head(main_riv_values, max_main_riv)
 }
 
-message("Total main_bas partitions: ", length(main_bas_values))
+message("Total main_riv partitions: ", length(main_riv_values))
 
 results_by_threshold <- stats::setNames(vector("list", length(thresholds_km)), as.character(thresholds_km))
 
-for (b in main_bas_values) {
-  message("Processing main_bas: ", b)
+for (r in main_riv_values) {
+  message("Processing main_riv: ", r)
   
-  rivers_b <- rivers_filtered %>% dplyr::filter(.data$main_bas == b)
+  rivers_b <- rivers_filtered %>% dplyr::filter(.data$main_riv == r)
   if (nrow(rivers_b) == 0L) next
   
   net_b <- sfnetworks::as_sfnetwork(rivers_b, directed = TRUE) %>%
@@ -240,7 +238,7 @@ for (b in main_bas_values) {
       edge_attr_cols = edge_attr_cols,
       future_extra = dam_extra_tbl
     ) %>%
-      dplyr::mutate(main_bas = b, threshold_label = t_label)
+      dplyr::mutate(main_riv = r, threshold_label = t_label)
     
     results_by_threshold[[t_label]] <- dplyr::bind_rows(results_by_threshold[[t_label]], reach_enriched_b)
   }
