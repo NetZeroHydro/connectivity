@@ -40,7 +40,7 @@ thresholds_km <- c(10, 20, 50, 100, 250, Inf)
 edge_attr_cols <- c("csi", "bas_name", "main_riv", "hyriv_id")
 
 # Output
-output_dir <- "/home/meganhessel/processed_data"
+output_dir <- "/home/meganhessel/outputs"
 out_net_path <- file.path(output_dir, "out_world_net_with_dams.rds")
 write_combined <- TRUE
 
