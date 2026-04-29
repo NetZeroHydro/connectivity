@@ -29,9 +29,9 @@ if (!exists("out") || is.null(out$net_with_dams)) {
 }
 
 # Edit these thresholds (km)
-threshold_downstream_km <- Inf
-threshold_upstream_km <- Inf
-threshold_cascade_km <- Inf
+threshold_downstream_km <- 100
+threshold_upstream_km <- 100
+threshold_cascade_km <- 100
 
 conn_v3 <- connectivity_from_network(
   net_with_dams = out$net_with_dams,
@@ -41,8 +41,54 @@ conn_v3 <- connectivity_from_network(
 )
 
 reach_df <- conn_v3$reach_df
-debug <- conn_v3$debug
+debug <- conn_v3$debugs
 ```
+
+```{r}
+#| label: add-ffr-attributes
+
+# -----------------------------
+# Build dam_extra_tbl with dam_id format matching reach_df
+# -----------------------------
+
+# FHReD: force "FHRED_<id>" style to match reach_df
+fhred_extra <- future_dams_raw %>%
+  dplyr::transmute(
+    dam_id = paste0("FHRED_", as.character(dam_id)),
+    dam_name = project_name,
+    capacity_mw = as.numeric(capacity_mw),
+    main_river = main_river,
+    hybas_l12 = NA_character_
+  )
+
+# GDW: keep current-dam id style used in your network build
+# IMPORTANT: if your net build used grand_id instead of gdw_id, swap below.
+gdw_extra <- gdw %>%
+  sf::st_drop_geometry() %>%
+  dplyr::transmute(
+    dam_id = paste0("GDW_", as.character(gdw_id)),
+    dam_name = dam_name,
+    capacity_mw = as.numeric(power_mw),
+    main_river = NA_character_,
+    hybas_l12 = as.character(hybas_l12)
+  )
+
+dam_extra_tbl <- dplyr::bind_rows(fhred_extra, gdw_extra) %>%
+  dplyr::mutate(dam_id = trimws(as.character(dam_id))) %>%
+  dplyr::distinct(dam_id, .keep_all = TRUE)
+
+# -----------------------------
+# Enrich connectivity output
+# -----------------------------
+reach_enriched <- add_ffr_attr(
+  net_with_dams = out$net_with_dams,
+  reach_df = reach_df,
+  edge_attr_cols = c("csi", "bas_name", "main_riv", "hyriv_id"),
+  future_extra = dam_extra_tbl
+)
+```
+
+
 
 ```{r}
 #| label: prep-map-data

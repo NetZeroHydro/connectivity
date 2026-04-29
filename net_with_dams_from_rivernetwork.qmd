@@ -62,17 +62,17 @@ head(main_riv_counts, 100)
 ord_stra_min <- 1L
 
 # Snap tolerance in metres for st_network_blend().
-blend_tolerance_m <- 5000
+blend_tolerance_m <- 500
 
 # Distance (metres) used to remove FHReD dams that are already represented
-fhred_overlap_tolerance_m <- 5000
+fhred_overlap_tolerance_m <- 500
   
   # 6050 for 205 removed from GDW$orig_src == FHReD
 
 # Optional subset for testing:
 # - NULL = all rivers
 # - numeric/id value = keep only rows with this main_riv
-main_riv_filter <- 41392598 # Mekong 41392598
+main_riv_filter <- 41392598 # Mekong 41392598 # Amazon 60443230
 ```
 
 ```{r}
@@ -209,7 +209,7 @@ cat("FHReD kept after de-duplication:", nrow(dams_future_fhred_clean), "\n")
 
 all_dams <- dplyr::bind_rows(
   dams_future_fhred_clean %>%
-    dplyr::transmute(dam_id = paste0("FHRED_", dam_id), is_current_dam, geometry = sf::st_geometry(.)),
+    dplyr::transmute(dam_id = paste0("FHRED_", dam_id), is_current_dam, geometry = sf::st_geometry(.), project_name, capacity_mw),
   current_dams_gdw %>%
     dplyr::transmute(dam_id = paste0("GDW_", dam_id), is_current_dam, geometry = sf::st_geometry(.))
 ) %>% sf::st_as_sf()

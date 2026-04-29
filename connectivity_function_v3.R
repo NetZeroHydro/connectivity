@@ -20,7 +20,7 @@
 # - cascade_level = max(downstream_hops, upstream_hops) when **both**
 #   neighbors exist and both hop counts are finite; otherwise NA (“no cascade”).
 # - connectivity_category: cascade_classic when both sides are same-trunk
-#   (downstream_hops == 0 and upstream_hops == 0), then cascade1/2/3+ from
+#   (downstream_hops == 0 and upstream_hops == 0), then cascade1/2/+ from
 #   cascade_level, then FFR / downstream
 #   / upstream arms from min distances vs the same threshold_*_km used for pools.
 # - Thresholds are explicit km inputs: downstream/upstream/cascade.
@@ -50,8 +50,8 @@
 #'
 #' **`connectivity_category` cascade classes:** `cascade_classic` when both
 #' neighbors are on the same trunk (`downstream_hops == 0` and
-#' `upstream_hops == 0`), then `cascade1`, `cascade2`, `cascade3+` for max hops
-#' 1, 2, and 3+ respectively.
+#' `upstream_hops == 0`), then `cascade1`, `cascade2+` for max hops
+#' 1, 2 respectively.
 #'
 #' **`threshold_cascade_km`:** explicit km input (currently not used to pick a
 #' second neighbor; kept as explicit cascade threshold parameter).
@@ -515,8 +515,8 @@ connectivity_from_network <- function(
         !is.na(.data$cascade_level) &
           .data$downstream_hops == 0L & .data$upstream_hops == 0L ~ "cascade_classic",
         !is.na(.data$cascade_level) & .data$cascade_level == 1L ~ "cascade1",
-        !is.na(.data$cascade_level) & .data$cascade_level == 2L ~ "cascade2",
-        !is.na(.data$cascade_level) & .data$cascade_level >= 3L ~ "cascade3+",
+        !is.na(.data$cascade_level) & .data$cascade_level >= 2L ~ "cascade2+",
+        #!is.na(.data$cascade_level) & .data$cascade_level >= 3L ~ "cascade3+",
         (is.na(.data$min_distance_upstream_km) | .data$min_distance_upstream_km > threshold_upstream_km) &
           (is.na(.data$min_distance_downstream_km) | .data$min_distance_downstream_km > threshold_downstream_km) ~ "FFR",
         !is.na(.data$min_distance_upstream_km) &
