@@ -1,10 +1,10 @@
-install.packages("sfnetworks")
-install.packages("sf")
-install.packages("tidygraph")
-install.packages("dpylr")
-install.packages("readr")
-install.packages("janitor")
-install.packages("igraph")
+# install.packages("sfnetworks")
+# install.packages("sf")
+# install.packages("tidygraph")
+# install.packages("dpylr")
+# install.packages("readr")
+# install.packages("janitor")
+# install.packages("igraph")
 
 
   library(sf)
@@ -40,7 +40,7 @@ thresholds_km <- c(10, 20, 50, 100, 250, Inf)
 edge_attr_cols <- c("csi", "bas_name", "main_riv", "hyriv_id")
 
 # Output
-output_dir <- "/home/meganhessel/outputs"
+output_dir <- "/capstone/netzerohydro/data/processed_data"
 out_net_path <- file.path(output_dir, "out_world_net_with_dams.rds")
 write_combined <- TRUE
 
@@ -186,6 +186,22 @@ dam_extra_tbl <- dplyr::bind_rows(fhred_extra, gdw_extra) %>%
   dplyr::mutate(dam_id = trimws(as.character(.data$dam_id))) %>%
   dplyr::distinct(.data$dam_id, .keep_all = TRUE)
 
+# Build one global plotting network
+all_dams_plot <- dplyr::bind_rows(
+  dams_future_fhred_clean %>%
+    dplyr::transmute(dam_id = .data$dam_id, is_current_dam = .data$is_current_dam, geometry = sf::st_geometry(.)),
+  current_dams_gdw %>%
+    dplyr::transmute(dam_id = .data$dam_id, is_current_dam = .data$is_current_dam, geometry = sf::st_geometry(.))
+) %>%
+  sf::st_as_sf(sf_column_name = "geometry", crs = sf::st_crs(rivers_filtered))
+
+net_plot_world <- sfnetworks::as_sfnetwork(rivers_filtered, directed = TRUE) %>%
+  tidygraph::activate("edges") %>%
+  dplyr::mutate(weight = sfnetworks::edge_length()) %>%
+  sfnetworks::st_network_blend(all_dams_plot, tolerance = blend_tolerance_m)
+
+saveRDS(net_plot_world, file.path(output_dir, "net_with_dams_plotting_world.rds"))
+
 # =============================================================================
 # Iterate by main_bas + thresholds
 # =============================================================================
@@ -237,15 +253,23 @@ for (r in main_riv_values) {
   dams_fut_b <- dams_future_fhred_clean[as.numeric(nearest_fut) <= blend_tolerance_m, , drop = FALSE]
   
   dams_fut_b_small <- dams_fut_b %>%
-    dplyr::select(dam_id, is_current_dam)
+    dplyr::transmute(
+      dam_id = as.character(.data$dam_id),
+      is_current_dam = .data$is_current_dam
+    ) %>%
+    sf::st_as_sf()
   
   dams_cur_b_small <- dams_cur_b %>%
-    dplyr::select(dam_id, is_current_dam)
+    dplyr::transmute(
+      dam_id = as.character(.data$dam_id),
+      is_current_dam = .data$is_current_dam
+    ) %>%
+    sf::st_as_sf()
   
   parts <- Filter(function(x) nrow(x) > 0, list(dams_fut_b_small, dams_cur_b_small))
   if (length(parts) == 0L) next
   
-  all_dams_b <- do.call(rbind, parts) 
+  all_dams_b <- do.call(sf::rbind, parts)
   net_with_dams_b <- tryCatch(
     sfnetworks::st_network_blend(net_b, all_dams_b, tolerance = blend_tolerance_m),
     error = function(e) {
