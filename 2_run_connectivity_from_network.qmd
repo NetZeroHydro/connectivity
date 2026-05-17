@@ -1,0 +1,60 @@
+---
+title: "2_run_connectivity_from_network"
+format: html
+---
+Run connectivity function over network built in 1_net_with_dams_from_network.
+
+```{r}
+#| label: load-libraries
+#| message: false
+#| warning: false
+
+library(sf)
+library(dplyr)
+library(tidygraph)
+library(leaflet)
+library(sfnetworks)
+library(igraph)
+```
+
+```{r}
+#| label: setup
+#| message: false
+#| warning: false
+
+# Source connectivity function
+source("R/connectivity_from_network.R")
+
+# Load `out` from 1_net_with_dams_from_rivernetwork.qmd
+out_path <- "/capstone/netzerohydro/data/processed_data/net_with_dams_GIS_v2.rds"
+out <- readRDS(out_path)
+
+# Thresholds define recorded distance between dams on the river network used to calculate connectivity. We use same threshold for up/downstream and cascades. 
+
+# Edit threshold
+threshold <- 250
+
+threshold_downstream_km <- threshold
+threshold_upstream_km <- threshold
+threshold_cascade_km <- threshold
+```
+
+Run connectivity function.
+
+```{r}
+out_conn <- connectivity_from_network(
+  net_with_dams = out$net_with_dams,
+  threshold_downstream_km = threshold_downstream_km,
+  threshold_upstream_km = threshold_upstream_km,
+  threshold_cascade_km = threshold_cascade_km
+)
+```
+
+Optional: Save output file
+
+```{r}
+out_conn_path <- paste0("/capstone/netzerohydro/data/processed_data/reach_df_", threshold, "_GIS_v2.rds")
+saveRDS(out_conn, file = out_conn_path)
+```
+
+

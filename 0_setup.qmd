@@ -1,0 +1,79 @@
+---
+title: "load_ffr"
+subtitle: "This script loads Free-flowing-river data and merges it with HydroRIVERS"
+format: html
+---
+# Import libraries
+```{r}
+library(janitor)
+library(sf)
+```
+
+# Load Data
+```{r}
+# HydroRIVERS global
+HydroRIVERS <- read_sf("/capstone/netzerohydro/data/raw/HydroRIVERS_v10_shp/HydroRIVERS_v10_shp") %>% 
+  clean_names() # IMPORTANT: load shp not gdb
+
+# Free flowing rivers global
+ffr <- read_sf("/capstone/netzerohydro/data/raw/FFR_river_network.gdb") %>%   
+  clean_names()
+```
+
+FFR has MULTILINESTRING Shape whereas HydroRIVERS has LINESTRING geometry. Run a simple check on a sample to see if FFR actually has disconnected vectors. 
+
+```{r}
+{
+  check <- ffr %>%
+    slice_sample(n = 100) %>% # Random sample
+    mutate(n_segments = map_int(Shape, ~length(.x))) %>% # Count number of line segments in each MULTILINESTRING geometry
+    summarise( # count features with multiple segments, find max segments
+      multi_segment = sum(n_segments > 1), # Count how many have >1 segment
+      max_segments = max(n_segments) # Find maximum number of segments
+    )
+  
+  if (check$multi_segment > 0) {
+    print(paste("WARNING:", check$multi_segment, "MULTILINESTRINGs have", 
+                check$max_segments, "disconnected parts"))
+  } else {
+    print("All checked features are single segments (safe to convert to LINESTRING)")
+  }
+  
+  rm(check)
+}
+
+# It does not, still if you plan to use the ffr geometry alongside HydroRIVERS you need to convert to linestring
+ffr_linestring <- ffr %>%
+  st_cast("LINESTRING")
+
+```
+This Warning:
+
+Warning in st_cast.sf(., "LINESTRING") :
+repeating attributes for all sub-geometries for which they may not be constant
+ 
+Is harmless because ffr_linestring has the same number of rows as ffr. So nothing was repeated.
+# Join HydroRIVERS and ffr 
+
+```{r}
+# Join FFR attributes to HydroRIVERS (Keeps HydroRIVERS CRS) 
+HydroRIVERS_ffr <- HydroRIVERS %>%
+  left_join(ffr %>% 
+            st_drop_geometry(), # Remove ffr$geometry column (its the same as HydroRIVERS$Shape)
+            by = c("hyriv_id" = "reach_id"))
+```
+ 
+
+# Save all three as RDS
+
+```{r}
+# Save HydroRIVERS
+saveRDS(HydroRIVERS, "../../../../../capstone/netzerohydro/data/cleaned_v1/world_rivers.rds")
+
+# Save FFR
+saveRDS(ffr, "../../../../../capstone/netzerohydro/data/cleaned_v1/ffr.rds")
+
+# Save joined object ffr + HydroRIVERS
+saveRDS(HydroRIVERS_ffr, "../../../../../capstone/netzerohydro/data/cleaned_v1/world_rivers_ffr.rds")
+```
+

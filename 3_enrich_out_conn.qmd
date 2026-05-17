@@ -1,0 +1,42 @@
+---
+title: "3_enrich_out_conn"
+format: html
+---
+Enrich connectivity dataframe using add_ffr_attr.R function, to pull attributes from free-flowing river data as well as join with our protected area data.
+
+```{r}
+#| label: setup
+
+# Load libraries
+library(sf)
+library(dplyr)
+library(tidygraph)
+library(leaflet)
+library(sfnetworks)
+library(igraph)
+
+# Load out from 1_net_with_dams_from_network.qmd
+out_path <- "/capstone/netzerohydro/data/processed_data/net_with_dams_GIS_v2.rds"
+out <- readRDS(out_path)
+
+# Load out_conn from 2_run_connectivity_from_network.qmd
+out_conn_path <- "/capstone/netzerohydro/data/processed_data/reach_df_threshold_test.rds"
+out_conn <- readRDS(out_conn_path)
+
+# Source function
+source("R/add_ffr_attr.R")
+```
+
+Run add_ffr_attr function.
+
+```{r}
+#| label: run-function
+
+out_enriched <- add_ffr_attr(
+  net_with_dams = out$net_with_dams,
+  reach_df = out_conn$reach_df,
+  edge_attr_cols = c("csi", "bas_name", "main_riv", "hyriv_id")
+)
+```
+
+

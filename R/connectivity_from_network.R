@@ -1,5 +1,5 @@
 # =============================================================================
-# connectivity_function_v3.R
+# connectivity_from_network.R
 # =============================================================================
 # Connectivity for a blended dam network (v3): builds `reach_df` (one row per
 # dam node) plus a `debug` list of tibbles.
