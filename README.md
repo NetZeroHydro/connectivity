@@ -1,4 +1,5 @@
-# Assigning River Network Connectivity Status for Future Dams Based on Spatial Relationship to Exisitng Dams
+# Assigning River Network Connectivity Status for Future Dams Based on Spatial Relationship to Existing Dams
+<img width="1024" height="768" alt="image" src="https://github.com/user-attachments/assets/e46caeaf-61f5-444b-89e2-8a52db614212" />
 
 ## Network Connenctivity analysis
 
