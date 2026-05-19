@@ -518,7 +518,7 @@ connectivity_from_network <- function(
         !is.na(.data$cascade_level) & .data$cascade_level >= 2L ~ "cascade2+",
         #!is.na(.data$cascade_level) & .data$cascade_level >= 3L ~ "cascade3+",
         (is.na(.data$min_distance_upstream_km) | .data$min_distance_upstream_km > threshold_upstream_km) &
-          (is.na(.data$min_distance_downstream_km) | .data$min_distance_downstream_km > threshold_downstream_km) ~ "FFR",
+          (is.na(.data$min_distance_downstream_km) | .data$min_distance_downstream_km > threshold_downstream_km) ~ "undammed",
         !is.na(.data$min_distance_upstream_km) &
           .data$min_distance_upstream_km <= threshold_upstream_km &
           (is.na(.data$min_distance_downstream_km) | .data$min_distance_downstream_km > threshold_downstream_km) ~ "downstream",
