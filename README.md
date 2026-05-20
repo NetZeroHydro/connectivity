@@ -83,17 +83,17 @@ Datasets used in the default pipeline (free online):
 
 Analysis was run with:
 
-| Component | Version |
-|-----------|---------|
-| R | 4.5.2 |
-| sf | 1.0.14 |
-| sfnetworks | 0.6.5 |
-| tidygraph | 1.3.1 |
-| igraph | 2.2.1 |
-| dplyr | 1.2.1 |
-| janitor | 2.2.0 |
-| readr | 2.1.4 |
-| leaflet | 2.2.3 |
+| Component | Version | Role |
+|-----------|---------|------|
+| R | 4.5.2 | — |
+| sf | 1.0.14 | Spatial I/O, CRS, geometry operations |
+| sfnetworks | 0.6.5 | Directed river graph and dam blending |
+| tidygraph | 1.3.1 | Node/edge table access on the graph |
+| igraph | 2.2.1 | Shortest-path distances and trunk-hop matrix |
+| dplyr | 1.2.1 | Data wrangling |
+| janitor | 2.2.0 | `clean_names()` on imported tables |
+| readr | 2.1.4 | Tabular I/O where used |
+| leaflet | 2.2.3 | Optional maps in notebook 1 |
 
 Check versions on your machine:
 
@@ -117,17 +117,6 @@ sapply(pkgs, packageVersion)
 6. **Optional saves:** notebook 1 writes `out` to `paths$net_with_dams_rds`; notebook 2 writes `out_conn` under `paths$processed`. Adjust filenames in those notebooks if needed.
 
 7. **Custom data:** if you are not using GDW/FHReD/HydroRIVERS, build your own `net_with_dams` following [`alt_dam_data.qmd`](alt_dam_data.qmd), then call `connectivity_from_network()` directly.
-
-### Package roles
-
-- **sf** — spatial I/O, CRS, geometry operations
-- **sfnetworks** — directed river graph and dam blending
-- **tidygraph** — node/edge table access on the graph
-- **igraph** — shortest-path distances and trunk-hop matrix
-- **dplyr** — data wrangling
-- **janitor** — `clean_names()` on imported tables
-- **readr** — tabular I/O where used
-- **leaflet** — optional maps in notebook 1
 
 ## Technical documentation
 
