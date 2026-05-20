@@ -18,7 +18,6 @@ The outputs are intended for downstream multi-criteria analysis: one row per dam
 ├── 2_run_connectivity_from_network.qmd  # Run connectivity classification
 ├── 3_enrich_out_conn.qmd            # Append FFR / river attributes to reach_df
 ├── alt_dam_data.qmd                 # Minimal guide: use connectivity on other data
-├── data_viz_meg.qmd                 # Exploratory maps and figures (not part of core pipeline)
 ├── LICENSE
 ├── R/
 │   ├── add_ffr_attr.R               # Enrich reach_df with edge/dam columns
@@ -33,7 +32,6 @@ The outputs are intended for downstream multi-criteria analysis: one row per dam
 | `2_run_connectivity_from_network.qmd` | Calls `connectivity_from_network()`; produces `out_conn` with `reach_df`. |
 | `3_enrich_out_conn.qmd` | Calls `add_ffr_attr()`; produces `out_enriched`. |
 | `alt_dam_data.qmd` | Short checklist for applying the functions to a custom network. |
-| `data_viz_meg.qmd` | Standalone visualization notebook. |
 
 ## R functions
 
