@@ -1,47 +1,136 @@
 # Assigning River Network Connectivity Status for Future Dams Based on Spatial Relationship to Existing Dams
 
-## Network Connenctivity analysis
+**Authors:** Leela Dixit, Megan Hessel, Aakriti Poudel, and Lucian Scher
 
-**Authors** Leela Dixit, Megan Hessel, Aakriti Poudel, and Lucian Scher
+## Purpose
 
-### Purpose
+This repository implements a **connectivity classification workflow** for future hydropower dams on a directed river network. Given a blended network of existing (“current”) and planned (“future”) dam points snapped to river reaches, it assigns each future dam a **connectivity category** (e.g. cascade, upstream-only, downstream-only, undammed) based on directed river distance and trunk-hop relationships to the nearest current dams.
 
-This repository contains three functions and tests to build a sfnetworks river network with dams, calculate connecvitiy and assign additonal attributes to be used in the MCDA model. 
-
-### Data
-
-The datasets used for current and future dams, river network geometries and additional attributes can be accessed for free online using the links below. 
-
--   [Global Dam Watch (GDW)](https://www.globaldamwatch.org/):Database that has all existing hydropwer projects.
-
--   [Future Hydropower and Reservoir Data (FhRED)](https://www.globaldamwatch.org/directory):Data set with planned and future hydropower projects with capacity of at least 1 MW.
-
--   [Global River Networks (HydroRIVERS Dataset)](https://www.hydrosheds.org/products/hydrorivers): Provides vectorized spatial global river network data at 15 arc-second resolution, approximately 500 m at the equator, and includes river attributes.
-
--   [Free-Flowing Rivers database (FFR)](https://www.hydrosheds.org/applications/free-flowing-rivers):Using HydroSHED river network, creates a underpinning hydrographic data to support the identification of free-flowing and at-risk rivers.
-
+The outputs are intended for downstream multi-criteria analysis: one row per dam with neighbor IDs, distances, hop counts, cascade level, and optional river/dam attributes. This repo does **not** run the full MCDA model—it supplies the connectivity layer and enrichment steps only.
 
 <img width="510" height="334" alt="image" src="https://github.com/user-attachments/assets/e46caeaf-61f5-444b-89e2-8a52db614212" />
 
+## Repository layout
 
-## File Structure
+```
+├── 0_setup.qmd                      # Packages, paths, and raw data loading (run first)
+├── 1_net_with_dams_from_network.qmd # Build directed sfnetwork with blended dams
+├── 2_run_connectivity_from_network.qmd  # Run connectivity classification
+├── 3_enrich_out_conn.qmd            # Append FFR / river attributes to reach_df
+├── alt_dam_data.qmd                 # Minimal guide: use connectivity on other data
+├── data_viz_meg.qmd                 # Exploratory maps and figures (not part of core pipeline)
+├── LICENSE
+├── R/
+│   ├── add_ffr_attr.R               # Enrich reach_df with edge/dam columns
+│   └── connectivity_from_network.R  # Core connectivity logic
+└── README.md
+```
 
-IN PROGRESS
+| File | Role |
+|------|------|
+| `0_setup.qmd` | Defines editable `paths`, loads libraries, reads HydroRIVERS, FFR, GDW, and FHReD into the R session. |
+| `1_net_with_dams_from_network.qmd` | Filters rivers, de-duplicates FHReD vs GDW, blends dams into an `sfnetwork`, produces `out`. |
+| `2_run_connectivity_from_network.qmd` | Calls `connectivity_from_network()`; produces `out_conn` with `reach_df`. |
+| `3_enrich_out_conn.qmd` | Calls `add_ffr_attr()`; produces `out_enriched`. |
+| `alt_dam_data.qmd` | Short checklist for applying the functions to a custom network. |
+| `data_viz_meg.qmd` | Standalone visualization notebook. |
 
-### R 
+## R functions
 
-DESCRIBE FUNCTIONS
+### `connectivity_from_network()`
 
-### Packages used
+**File:** `R/connectivity_from_network.R`
 
-Analysis was done in R v4.5.2 using the following packages:
+Takes a directed `sfnetwork` with dams already blended onto the graph (`net_with_dams`). For each **future** dam node, it finds the nearest **current** dam upstream and downstream along the river network (within km thresholds), using trunk-hop count then river km as tie-breakers. It then assigns `cascade_level` and `connectivity_category` (e.g. `cascade_classic`, `cascade1`, `cascade2+`, `upstream`, `downstream`, `undammed`).
 
-- sf: Handles all spatial vector data workflows (points/lines, CRS transforms, geometry operations, nearest-feature matching, and spatial filtering).
-- sfnetworks: Builds directed river sfnetwork objects and blends snapped dam points into the network topology.
-- tidygraph: Switches between network node/edge tables and supports tidy manipulation of graph attributes.
-- igraph: Computes directed weighted path distances and trunk-hop distances used in upstream/downstream and cascade logic.
-- dplyr: Powers nearly all data wrangling (filtering, joining, grouping, summarizing, mutating, and selecting fields).
+**Produces:** A named list with:
 
-### Technical Documentation
+- `reach_df` — one row per dam (future + current placeholders) with distances, neighbor dam IDs, hop counts, and category
+- `debug` — intermediate tables for QA
+- `threshold_used` — km thresholds applied
 
-To read more about the project and modeling processes, please refer to our [Bren project page](https://bren.ucsb.edu/projects/hydropowers-low-hanging-fruits-leveraging-least-impact-dams-power-net-zero-futurehttps://bren.ucsb.edu/projects/hydropowers-low-hanging-fruits-leveraging-least-impact-dams-power-net-zero-future) and technical documentation.
+### `add_ffr_attr()`
+
+**File:** `R/add_ffr_attr.R`
+
+Appends columns to `reach_df` without recomputing connectivity. Joins river-edge attributes from `net_with_dams` by `bb_id`, and optionally extra dam-level columns by `dam_id`.
+
+**Produces:** The same `reach_df` structure with additional attribute columns (e.g. `csi`, `bas_name`, `hyriv_id`).
+
+## Workflow
+
+Run the Quarto notebooks **in order in the same R session** (Render All, or run each interactively without restarting R):
+
+1. `0_setup.qmd` — edit `paths` if needed; loads packages and raw data
+2. `1_net_with_dams_from_network.qmd` — build network (`out`)
+3. `2_run_connectivity_from_network.qmd` — connectivity (`out_conn`)
+4. `3_enrich_out_conn.qmd` — enrichment (`out_enriched`)
+
+Each notebook lists prerequisites at the top. To use different raw files, change the `paths` list in `0_setup.qmd` (default data root: `/capstone/netzerohydro/data`).
+
+To run connectivity on **your own** river network and dam points, see [`alt_dam_data.qmd`](alt_dam_data.qmd).
+
+## Data sources
+
+Datasets used in the default pipeline (free online):
+
+- [Global Dam Watch (GDW)](https://www.globaldamwatch.org/) — existing hydropower projects
+- [Future Hydropower and Reservoir Data (FhRED)](https://www.globaldamwatch.org/directory) — planned projects ≥ 1 MW
+- [HydroRIVERS](https://www.hydrosheds.org/products/hydrorivers) — global river network (~500 m)
+- [Free-Flowing Rivers (FFR)](https://www.hydrosheds.org/applications/free-flowing-rivers) — reach attributes on HydroSHEDS network
+
+## Reproducibility
+
+### Session info
+
+Analysis was run with:
+
+| Component | Version |
+|-----------|---------|
+| R | 4.5.2 |
+| sf | 1.0.14 |
+| sfnetworks | 0.6.5 |
+| tidygraph | 1.3.1 |
+| igraph | 2.2.1 |
+| dplyr | 1.2.1 |
+| janitor | 2.2.0 |
+| readr | 2.1.4 |
+| leaflet | 2.2.3 |
+
+Check versions on your machine:
+
+```r
+pkgs <- c("sf", "sfnetworks", "tidygraph", "igraph", "dplyr", "janitor", "readr", "leaflet")
+sapply(pkgs, packageVersion)
+```
+
+### How to recreate the analysis
+
+1. **Install R** (4.5.2 or compatible) and the packages above (`install.packages()` for CRAN packages; `sf` may need system GDAL/GEOS libraries).
+
+2. **Obtain data** from the links in [Data sources](#data-sources) and place files on disk (or use the Bren capstone paths if available).
+
+3. **Clone this repo** and open the project in RStudio or VS Code with Quarto.
+
+4. **Edit paths** in `0_setup.qmd` — set `data_root` and individual file paths to match your machine.
+
+5. **Run notebooks 0 → 3 in one R session** without restarting R between steps. Objects (`world_rivers_ffr`, `out`, `out_conn`, etc.) persist in the global environment.
+
+6. **Optional saves:** notebook 1 writes `out` to `paths$net_with_dams_rds`; notebook 2 writes `out_conn` under `paths$processed`. Adjust filenames in those notebooks if needed.
+
+7. **Custom data:** if you are not using GDW/FHReD/HydroRIVERS, build your own `net_with_dams` following [`alt_dam_data.qmd`](alt_dam_data.qmd), then call `connectivity_from_network()` directly.
+
+### Package roles
+
+- **sf** — spatial I/O, CRS, geometry operations
+- **sfnetworks** — directed river graph and dam blending
+- **tidygraph** — node/edge table access on the graph
+- **igraph** — shortest-path distances and trunk-hop matrix
+- **dplyr** — data wrangling
+- **janitor** — `clean_names()` on imported tables
+- **readr** — tabular I/O where used
+- **leaflet** — optional maps in notebook 1
+
+## Technical documentation
+
+For the broader Bren project and MCDA context, see the [Bren project page](https://bren.ucsb.edu/projects/hydropowers-low-hanging-fruits-leveraging-least-impact-dams-power-net-zero-future) and technical documentation.

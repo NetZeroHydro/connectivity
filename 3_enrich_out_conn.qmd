@@ -1,33 +1,33 @@
 ---
-title: "3_enrich_out_conn"
+title: "3 — Enrich connectivity with FFR attributes"
 format: html
 ---
-Enrich connectivity dataframe using add_ffr_attr.R function, to pull attributes from free-flowing river data as well as join with our protected area data.
+
+## Prerequisites
+
+Run `0_setup.qmd`, `1_net_with_dams_from_network.qmd`, and `2_run_connectivity_from_network.qmd` in the same R session.
+
+## Objects needed
+
+`out`, `out_conn`
+
+## R source
+
+`R/add_ffr_attr.R`
+
+## Creates
+
+`out_enriched`
+
+Enrich `reach_df` with river-edge (FFR) attributes via `add_ffr_attr()`.
 
 ```{r}
-#| label: setup
+#| label: source-function
+#| message: false
+#| warning: false
 
-# Load libraries
-library(sf)
-library(dplyr)
-library(tidygraph)
-library(leaflet)
-library(sfnetworks)
-library(igraph)
-
-# Load out from 1_net_with_dams_from_network.qmd
-out_path <- "/capstone/netzerohydro/data/processed_data/net_with_dams_GIS_v2.rds"
-out <- readRDS(out_path)
-
-# Load out_conn from 2_run_connectivity_from_network.qmd
-out_conn_path <- "/capstone/netzerohydro/data/processed_data/reach_df_threshold_test.rds"
-out_conn <- readRDS(out_conn_path)
-
-# Source function
 source("R/add_ffr_attr.R")
 ```
-
-Run add_ffr_attr function.
 
 ```{r}
 #| label: run-function
@@ -38,5 +38,3 @@ out_enriched <- add_ffr_attr(
   edge_attr_cols = c("csi", "bas_name", "main_riv", "hyriv_id")
 )
 ```
-
-

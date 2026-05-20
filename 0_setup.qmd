@@ -1,79 +1,141 @@
 ---
-title: "load_ffr"
-subtitle: "This script loads Free-flowing-river data and merges it with HydroRIVERS"
+title: "0 — Environment, packages, and data loading"
+subtitle: "Run this notebook first"
 format: html
 ---
-# Import libraries
+
+## Prerequisites
+
+- **Libraries:** sf, janitor, dplyr, sfnetworks, tidygraph, igraph, readr, leaflet
+- **Raw data:** edit `paths` below to match your machine
+- **R session:** versions in README "Session info"
+
+## Creates in your R session
+
+`paths`, `target_crs`, `rivers`, `ffr`, `world_rivers_ffr`, `current_dams_gdw`, `future_dams_sf`
+
+# Overview
+
+Run this notebook once per session before notebooks 1–3. It loads packages, reads raw spatial data, and leaves named objects in your **global environment** (no intermediate `.rds` bundle).
+
+Edit the `paths` list below if your data are not under `/capstone/netzerohydro/data`. More detail on datasets: README and Bren technical documentation.
+
+# Paths
+
+Change `data_root` or any individual path as needed.
+
 ```{r}
-library(janitor)
+#| label: paths
+#| message: false
+
+data_root <- "/capstone/netzerohydro/data"
+
+paths <- list(
+  data_root = data_root,
+  raw = file.path(data_root, "raw"),
+  processed = file.path(data_root, "processed_data"),
+  hydrorivers = file.path(data_root, "raw/HydroRIVERS_v10_shp/HydroRIVERS_v10_shp"),
+  ffr_gdb = file.path(data_root, "raw/FFR_river_network.gdb"),
+  gdw_snapped = file.path(data_root, "GDW_prj_1000m_from_StrOrd3_SNAPPED.gpkg"),
+  fhred_snapped = file.path(data_root, "FhRED_prj_1000m_from_StrOrd3_SNAPPED.gpkg"),
+  net_with_dams_rds = file.path(data_root, "processed_data/net_with_dams_GIS_v2.rds")
+)
+
+target_crs <- sf::st_crs(3857) # EPSG:3857 for the full analysis
+dir.create(paths$processed, recursive = TRUE, showWarnings = FALSE)
+```
+
+# Packages
+
+```{r}
+#| label: packages
+#| message: false
+#| warning: false
+
 library(sf)
+library(sfnetworks)
+library(tidygraph)
+library(igraph)
+library(dplyr)
+library(janitor)
+library(readr)
+library(leaflet)
 ```
 
-# Load Data
-```{r}
-# HydroRIVERS global
-HydroRIVERS <- read_sf("/capstone/netzerohydro/data/raw/HydroRIVERS_v10_shp/HydroRIVERS_v10_shp") %>% 
-  clean_names() # IMPORTANT: load shp not gdb
+# Datasets
 
-# Free flowing rivers global
-ffr <- read_sf("/capstone/netzerohydro/data/raw/FFR_river_network.gdb") %>%   
-  clean_names()
-```
+| Dataset | Path key | Used for |
+|---------|----------|----------|
+| **HydroRIVERS** | `paths$hydrorivers` | Directed `sfnetwork` edges; `hyriv_id`, `bb_id`, Strahler order |
+| **FFR** | `paths$ffr_gdb` | `csi` and reach attributes joined to HydroRIVERS (`hyriv_id` = `reach_id`) |
+| **GDW** | `paths$gdw_snapped` | Current dams (`is_current_dam = TRUE`); overlap filter vs FHReD |
+| **FHReD** | `paths$fhred_snapped` | Future dams (`is_current_dam = FALSE`) |
 
-FFR has MULTILINESTRING Shape whereas HydroRIVERS has LINESTRING geometry. Run a simple check on a sample to see if FFR actually has disconnected vectors. 
-
-```{r}
-{
-  check <- ffr %>%
-    slice_sample(n = 100) %>% # Random sample
-    mutate(n_segments = map_int(Shape, ~length(.x))) %>% # Count number of line segments in each MULTILINESTRING geometry
-    summarise( # count features with multiple segments, find max segments
-      multi_segment = sum(n_segments > 1), # Count how many have >1 segment
-      max_segments = max(n_segments) # Find maximum number of segments
-    )
-  
-  if (check$multi_segment > 0) {
-    print(paste("WARNING:", check$multi_segment, "MULTILINESTRINGs have", 
-                check$max_segments, "disconnected parts"))
-  } else {
-    print("All checked features are single segments (safe to convert to LINESTRING)")
-  }
-  
-  rm(check)
-}
-
-# It does not, still if you plan to use the ffr geometry alongside HydroRIVERS you need to convert to linestring
-ffr_linestring <- ffr %>%
-  st_cast("LINESTRING")
-
-```
-This Warning:
-
-Warning in st_cast.sf(., "LINESTRING") :
-repeating attributes for all sub-geometries for which they may not be constant
- 
-Is harmless because ffr_linestring has the same number of rows as ffr. So nothing was repeated.
-# Join HydroRIVERS and ffr 
+# Load HydroRIVERS and FFR
 
 ```{r}
-# Join FFR attributes to HydroRIVERS (Keeps HydroRIVERS CRS) 
-HydroRIVERS_ffr <- HydroRIVERS %>%
-  left_join(ffr %>% 
-            st_drop_geometry(), # Remove ffr$geometry column (its the same as HydroRIVERS$Shape)
-            by = c("hyriv_id" = "reach_id"))
-```
- 
+#| label: load-rivers-ffr
+#| message: false
+#| warning: false
 
-# Save all three as RDS
+rivers <- sf::read_sf(paths$hydrorivers) %>%
+  janitor::clean_names() %>%
+  sf::st_transform(target_crs)
+
+ffr <- sf::read_sf(paths$ffr_gdb) %>%
+  janitor::clean_names() %>%
+  sf::st_transform(target_crs) %>%
+  sf::st_cast("LINESTRING")
+```
+
+# Join HydroRIVERS + FFR
 
 ```{r}
-# Save HydroRIVERS
-saveRDS(HydroRIVERS, "../../../../../capstone/netzerohydro/data/cleaned_v1/world_rivers.rds")
+#| label: join-rivers-ffr
+#| message: false
+#| warning: false
 
-# Save FFR
-saveRDS(ffr, "../../../../../capstone/netzerohydro/data/cleaned_v1/ffr.rds")
-
-# Save joined object ffr + HydroRIVERS
-saveRDS(HydroRIVERS_ffr, "../../../../../capstone/netzerohydro/data/cleaned_v1/world_rivers_ffr.rds")
+world_rivers_ffr <- rivers %>%
+  dplyr::left_join(
+    ffr %>% sf::st_drop_geometry(),
+    by = c("hyriv_id" = "reach_id")
+  )
 ```
 
+# Load and prepare dam layers
+
+```{r}
+#| label: load-dams
+#| message: false
+#| warning: false
+
+gdw <- sf::st_read(paths$gdw_snapped) %>% janitor::clean_names()
+
+current_dams_gdw <- gdw %>%
+  sf::st_make_valid() %>%
+  sf::st_set_crs(target_crs) %>%
+  sf::st_transform(target_crs) %>%
+  dplyr::mutate(
+    dam_id = as.character(.data$gdw_id),
+    is_current_dam = TRUE
+  )
+
+future_dams_raw <- sf::st_read(paths$fhred_snapped) %>%
+  sf::st_transform(target_crs) %>%
+  dplyr::mutate(is_current_dam = FALSE) %>%
+  as.data.frame() %>%
+  janitor::clean_names()
+
+future_dams_sf <- future_dams_raw %>%
+  sf::st_as_sf(
+    coords = c("lon_cleane", "lat_cleane"),
+    crs = target_crs,
+    remove = FALSE
+  ) %>%
+  sf::st_make_valid() %>%
+  sf::st_transform(target_crs) %>%
+  dplyr::mutate(
+    dam_id = as.character(.data$dam_id),
+    is_current_dam = FALSE
+  )
+```

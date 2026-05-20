@@ -1,105 +1,25 @@
 ---
-title: "net_with_dams_from_rivernetwork"
+title: "1 — Build river network with blended dams"
 format: html
 editor_options:
   chunk_output_type: inline
 ---
 
-Builds a directed river network with the sfnetworks package using HydroRIVERS vectors, then blends GDW (current) + FHReD (future) dams to create the sfnetwork graph needed to calculate connectivity.
+## Prerequisites
 
-```{r}
-#| label: setup
-#| message: false
-#| warning: false
+Run `0_setup.qmd` in the same R session.
 
-library(sf)
-library(sfnetworks)
-library(tidygraph)
-library(dplyr)
-library(readr)
-library(janitor)
+## Objects needed
 
-target_crs <- sf::st_crs(3857) # We use EPSG 3857 for the entire analysis
+`paths`, `target_crs`, `world_rivers_ffr`, `current_dams_gdw`, `future_dams_sf`
 
-# Load Global Dam Watch and prepare for blending
-gdw <- st_read("/capstone/netzerohydro/data/GDW_prj_1000m_from_StrOrd3_SNAPPED.gpkg") %>% clean_names()
+## Creates
 
-current_dams_gdw <- gdw %>%
-  sf::st_make_valid() %>%
-  sf::st_set_crs(target_crs) %>%
-  sf::st_transform(target_crs) %>%
-  dplyr::mutate(
-    dam_id = as.character(.data$gdw_id),
-    is_current_dam = TRUE
-  )
+`out` (optionally saved to `paths$net_with_dams_rds`)
 
-# Confirm correct CRS
-if (st_crs(current_dams_gdw)$epsg != target_crs) {
-  message("Reprojecting to EPSG:3857")
-  current_dams_gdw <- st_transform(current_dams_gdw, target_crs)
-}
+Builds a directed river network with **sfnetworks** from HydroRIVERS + FFR reaches, blends GDW (current) and FHReD (future) dams, and saves `out` for connectivity analysis.
 
-# Load Free-Flowing Rivers data
-ffr <- read_sf("/capstone/netzerohydro/data/raw/FFR_river_network.gdb") %>% 
-  st_transform(target_crs) %>% 
-  clean_names()
-
-# Load HydroRIVERS
-rivers <- read_sf("/capstone/netzerohydro/data/raw/HydroRIVERS_v10_shp/HydroRIVERS_v10_shp") %>% 
-  st_transform(target_crs) %>% 
-  clean_names()
-
-# Load HydroRIVERS and FFR
-world_rivers_ffr <- rivers %>%
-  left_join(
-    ffr %>% # Raw ffr data
-      st_drop_geometry(), # Remove ffr$geometry column (its the same as HydroRIVERS$Shape)
-    by = c("hyriv_id" = "reach_id")
-  ) %>% st_transform(target_crs)
-
-# Confirm correct CRS
-if (st_crs(world_rivers_ffr)$epsg != target_crs) {
-    message(paste("Reprojecting to", target_crs))
-    world_rivers_ffr <- st_transform(world_rivers_ffr, target_crs)
-  }
-
-# FHReD 
-# Somewhere in out QGIS flow, some column names were messed up. This does not affect the workflow. 
-future_dams_raw <- st_read("/capstone/netzerohydro/data/FhRED_prj_1000m_from_StrOrd3_SNAPPED.gpkg") |>
-  st_transform(target_crs) %>%
-  mutate(is_current_dam = FALSE) %>%
-  as.data.frame() %>% 
-  clean_names()
-
-# Prepare FHReD future dams as sf points.
-# st_as_sf() creates geometry from lon/lat columns.
-future_dams_sf <- future_dams_raw %>%
-  sf::st_as_sf(
-    coords = c("lon_cleane", "lat_cleane"),
-    crs = target_crs,
-    remove = FALSE
-  ) %>%
-  sf::st_make_valid() %>%
-  sf::st_transform(target_crs) %>%
-  dplyr::mutate(
-    dam_id = as.character(.data$dam_id),
-    is_current_dam = FALSE
-  )
-
-# Confirm correct CRS before proceeding
-
-if (st_crs(future_dams_sf)$epsg != target_crs) {
-  message("Reprojecting to EPSG:3857")
-  future_dams_sf <- st_transform(future_dams_sf, target_crs)
-}
-
-```
-
-Define parameters for building river network. For this project we used the following parameters:
-ord_stra_min <- 3
-blend_tolerance_m <- Inf
-fhred_overlap_tolerance_m <- 500
-main_riv_filter <- NULL
+## Parameters
 
 ```{r}
 #| label: params
@@ -111,42 +31,33 @@ main_riv_filter <- NULL
 ord_stra_min <- 2
 
 # Snap tolerance in metres for st_network_blend().
-blend_tolerance_m <- Inf 
+blend_tolerance_m <- Inf
 
-# 1500mm is 1.5km - gives 3 pixel margin at 15-second arc gird
+# Distance (metres) used to remove FHReD dams already represented in GDW.
+fhred_overlap_tolerance_m <- 500
 
-# Distance (metres) used to remove FHReD dams that are already represented
-fhred_overlap_tolerance_m <- 500 # 6050 removed 205 dams
-
-# Optional subset for testing:
-# - NULL = all rivers
-# - numeric/id value = keep only rows with this main_riv
+# Optional subset for testing: NULL = all rivers; numeric = main_riv id only.
 main_riv_filter <- 70834639 # Mekong 41392598 # Amazon 60443230
 ```
-
-Optional river filter to save compute time. Not needed for global analysis.
 
 ```{r}
 #| label: filter-rivers
 #| message: false
 #| warning: false
 
-# Filter HydroRIVERS by Strahler order
 rivers_filtered <- world_rivers_ffr %>%
   dplyr::filter(.data$ord_stra > ord_stra_min)
 
-# Optional: Filter by main_riv
 if (!is.null(main_riv_filter)) {
   rivers_filtered <- rivers_filtered %>%
     dplyr::filter(as.numeric(.data$main_riv) == as.numeric(main_riv_filter))
 }
 
-# Ensure rivers are valid LINESTRING features for sfnetwork conversion.
 rivers_filtered <- suppressWarnings(sf::st_cast(rivers_filtered, "LINESTRING"))
 rivers_filtered <- rivers_filtered[!sf::st_is_empty(rivers_filtered), , drop = FALSE]
 
 if (nrow(rivers_filtered) == 0L) {
-  stop("No rivers left after filters. Check ord_stra/main_bas settings.", call. = FALSE)
+  stop("No rivers left after filters. Check ord_stra/main_riv settings.", call. = FALSE)
 }
 ```
 
@@ -155,13 +66,10 @@ if (nrow(rivers_filtered) == 0L) {
 #| message: false
 #| warning: false
 
-# Keep only GDW rows explicitly labeled as FHReD-origin references.
-gdw_fhred_ref <- current_dams_gdw %>%  dplyr::filter(.data$orig_src == "FHReD")
+gdw_fhred_ref <- current_dams_gdw %>% dplyr::filter(.data$orig_src == "FHReD")
 
 n_fhred_before <- nrow(future_dams_sf)
 
-# st_is_within_distance() returns, for each FHReD row, indices of GDW ref points
-# within the given tolerance. Any non-empty match means "already represented".
 if (nrow(gdw_fhred_ref) > 0L && n_fhred_before > 0L) {
   overlap_idx <- sf::st_is_within_distance(
     future_dams_sf,
@@ -176,61 +84,61 @@ if (nrow(gdw_fhred_ref) > 0L && n_fhred_before > 0L) {
   dams_future_fhred_clean <- future_dams_sf
 }
 
-
 cat("FHReD total before de-duplication:", n_fhred_before, "\n")
 cat("FHReD removed within", fhred_overlap_tolerance_m, "m of GDW orig_src='FHReD':", dams_removed, "\n")
 cat("FHReD kept after de-duplication:", nrow(dams_future_fhred_clean), "\n")
 ```
 
-FHReD and GDW have different primary keys with redundant IDs for dams. We add a prefix so the primary key in the combined dams can be the same, while retaining the same ID number. 
-
 ```{r}
-#| label: Combine current & future dams
+#| label: combine-current-future-dams
 #| message: false
 #| warning: false
 
-# Too retain more attributes from FHReD and GDW add colnames to the transmute() below.
-
 all_dams <- dplyr::bind_rows(
   dams_future_fhred_clean %>%
-    dplyr::transmute(dam_id = paste0("FHRED_", dam_id), is_current_dam, geometry = sf::st_geometry(.), dam_name = project_na, capacity_mw = capacity, continent, country, main_basin = major_basi, main_river),
+    dplyr::transmute(
+      dam_id = paste0("FHRED_", .data$dam_id),
+      is_current_dam,
+      geometry = sf::st_geometry(.),
+      dam_name = .data$project_na,
+      capacity_mw = .data$capacity,
+      continent,
+      country,
+      main_basin = .data$major_basi,
+      main_river
+    ),
   current_dams_gdw %>%
-    dplyr::transmute(dam_id = paste0("GDW_", dam_id), is_current_dam, geometry = sf::st_geometry(.), country, main_basin, dam_name = dam_name, capacity_mw = power_mw)
-) %>% select(-geom) %>% 
-  sf::st_as_sf(target_crs)
+    dplyr::transmute(
+      dam_id = paste0("GDW_", .data$dam_id),
+      is_current_dam,
+      geometry = sf::st_geometry(.),
+      country,
+      main_basin,
+      dam_name = .data$dam_name,
+      capacity_mw = .data$power_mw
+    )
+) %>%
+  dplyr::select(-dplyr::any_of("geom")) %>%
+  sf::st_as_sf(crs = target_crs)
 ```
-
-Build sfnetwork. 
 
 ```{r}
 #| label: combine-and-build-network
 #| message: false
 #| warning: false
 
-# In the current analysis we snapped in QGIS before blending. For the future, or reproducing, we would like to snap in R.
-
-# all_dams_st <- st_snap(all_dams, rivers_filtered, tolerance = 1500) %>%
-#   st_transform(target_crs)
-
-# as_sfnetwork() converts river lines to a directed graph.
 net <- sfnetworks::as_sfnetwork(rivers_filtered, directed = TRUE) %>%
   tidygraph::activate("edges") %>%
-  # edge_length() computes geometric edge lengths; used as weighted distance input.
   dplyr::mutate(weight = sfnetworks::edge_length())
 
-
-# st_network_blend() inserts/snap-aligns dam points onto nearest network edges.
 net_with_dams <- sfnetworks::st_network_blend(net, all_dams, tolerance = blend_tolerance_m)
 ```
-
-Now we need to pull the node and edge attributes from the sfnetwork dam network.
 
 ```{r}
 #| label: snapped-dam-audit-with-river-attrs
 #| message: false
 #| warning: false
 
-# Extract snapped network nodes and keep only dam nodes.
 nodes_tbl <- net_with_dams %>%
   tidygraph::activate("nodes") %>%
   sf::st_as_sf() %>%
@@ -239,8 +147,6 @@ nodes_tbl <- net_with_dams %>%
 dams_snapped <- nodes_tbl %>%
   dplyr::filter(!is.na(.data$dam_id))
 
-# Assign each snapped dam node to nearest filtered river reach.
-# st_nearest_feature() returns row index of nearest river geometry per point.
 nearest_riv_idx <- sf::st_nearest_feature(dams_snapped, rivers_filtered)
 
 river_attr_keep <- c("hyriv_id", "bb_id", "ord_stra", "csi", "bas_name")
@@ -254,8 +160,6 @@ dams_snapped <- dams_snapped %>%
       dplyr::select(dplyr::all_of(river_attr_keep))
   )
 ```
-
-For troubleshooting we save the all objects and check certain outputs. 
 
 ```{r}
 #| label: diagnostics
@@ -272,10 +176,8 @@ cat("Total dams passed to blending:", n_input_total, "\n")
 cat("Dams snapped onto network:", n_snapped, "\n")
 cat("Dams not snapped:", n_unsnapped, "\n")
 cat("Snapped future dams: ", sum(dams_snapped$is_current_dam %in% FALSE, na.rm = TRUE), "\n")
-cat("Snapped current dams: ", sum(dams_snapped$is_current_dam %in% TRUE,  na.rm = TRUE), "\n")
+cat("Snapped current dams: ", sum(dams_snapped$is_current_dam %in% TRUE, na.rm = TRUE), "\n")
 ```
-
-Finally, save outputs as an object `out` to be ran with connectivity function. 
 
 ```{r}
 #| label: output-objects
@@ -286,58 +188,48 @@ out <- list(
   dams_current_gdw = current_dams_gdw,
   dams_future_fhred_clean = dams_future_fhred_clean,
   all_dams = all_dams,
-  dams_snapped = dams_snapped,
-  main_riv_dist = main_riv_dist
+  dams_snapped = dams_snapped
 )
 
-file_name <- paste0("net_with_dams_GIS_v2.rds")
-out_path <- file.path("/capstone/netzerohydro/data/processed_data", file_name)
-
-saveRDS(out, out_path)
+saveRDS(out, paths$net_with_dams_rds)
+message("Saved network output to: ", paths$net_with_dams_rds)
 ```
 
-Optional build map to check out your network! WARNING: If global analysis was use, this will take a while. 
+Optional map (slow for global networks):
 
 ```{r}
-library(leaflet)
-library(sf)
-library(dplyr)
+#| label: optional-map
+#| eval: false
 
-leaflet() %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  addPolylines(
+leaflet::leaflet() %>%
+  leaflet::addProviderTiles("CartoDB.Positron") %>%
+  leaflet::addPolylines(
     data = out$net_with_dams %>%
       tidygraph::activate("edges") %>%
       sf::st_as_sf() %>%
-      st_transform(4326),
-    color = ~colorFactor("Set3", domain = bb_id)(as.character(bb_id)),
+      sf::st_transform(4326),
+    color = ~ leaflet::colorFactor("Set3", domain = bb_id)(as.character(bb_id)),
     weight = 2,
     opacity = 0.7,
-    popup = ~paste0("bb_id: ", bb_id)
+    popup = ~ paste0("bb_id: ", bb_id)
   ) %>%
-  addCircleMarkers(
+  leaflet::addCircleMarkers(
     data = out$net_with_dams %>%
       tidygraph::activate("nodes") %>%
       sf::st_as_sf() %>%
-      dplyr::filter(!is.na(dam_id), is_current_dam %in% TRUE) %>%
-      st_transform(4326),
+      dplyr::filter(!is.na(.data$dam_id), .data$is_current_dam %in% TRUE) %>%
+      sf::st_transform(4326),
     radius = 4, color = "blue", fillColor = "blue", fillOpacity = 0.9, stroke = FALSE,
-    popup = ~paste0("Current dam<br>dam_id: ", dam_id)
+    popup = ~ paste0("Current dam<br>dam_id: ", dam_id)
   ) %>%
-  addCircleMarkers(
+  leaflet::addCircleMarkers(
     data = out$net_with_dams %>%
       tidygraph::activate("nodes") %>%
       sf::st_as_sf() %>%
-      dplyr::filter(!is.na(dam_id), is_current_dam %in% FALSE) %>%
-      st_transform(4326),
+      dplyr::filter(!is.na(.data$dam_id), .data$is_current_dam %in% FALSE) %>%
+      sf::st_transform(4326),
     radius = 4, color = "red", fillColor = "red", fillOpacity = 0.9, stroke = FALSE,
-    popup = ~paste0("Future dam<br>dam_id: ", dam_id)
+    popup = ~ paste0("Future dam<br>dam_id: ", dam_id)
   ) %>%
-  addScaleBar(position = "bottomleft")
-
+  leaflet::addScaleBar(position = "bottomleft")
 ```
-
-
-
-
-

@@ -1,0 +1,83 @@
+---
+title: "Using connectivity on a different dataset"
+format: html
+---
+
+## Idea
+
+`connectivity_from_network()` does not read files. It only needs a ready-made **`net_with_dams`**: a directed `sfnetwork` with dams snapped onto it.
+
+## What your network must have
+
+**Edges**
+
+- `weight` — edge length in **metres** (used as km in the function)
+- `bb_id` — trunk / reach ID for hop-based tie-breaking at confluences
+
+**Nodes (dam points only)**
+
+- `dam_id` — unique ID (character)
+- `is_current_dam` — `TRUE` for existing dams, `FALSE` for future/planned dams
+
+## Minimal example
+
+```{r}
+#| eval: false
+
+library(sf)
+library(sfnetworks)
+library(tidygraph)
+library(dplyr)
+
+# 1. Your river lines (LINESTRING, one CRS for everything)
+# rivers_sf needs a geometry column and bb_id per reach
+
+net <- sfnetworks::as_sfnetwork(rivers_sf, directed = TRUE) %>%
+  tidygraph::activate("edges") %>%
+  dplyr::mutate(weight = sfnetworks::edge_length())
+
+# 2. Your dam points — must include dam_id and is_current_dam
+# dams_sf <- sf object with POINT geometry
+
+net_with_dams <- sfnetworks::st_network_blend(net, dams_sf, tolerance = Inf)
+
+# 3. Run connectivity
+source("R/connectivity_from_network.R")
+
+out_conn <- connectivity_from_network(
+  net_with_dams = net_with_dams,
+  threshold_downstream_km = 250,
+  threshold_upstream_km = 250,
+  threshold_cascade_km = 250
+)
+
+reach_df <- out_conn$reach_df
+```
+
+## Checklist
+
+1. Project rivers and dams to the **same CRS**.
+2. Ensure edge **`weight`** is in metres and **`bb_id`** exists on every edge used in the analysis.
+3. Tag each dam node with **`dam_id`** and **`is_current_dam`** before blending.
+4. Use `st_network_blend()` (or equivalent snapping) so dam points sit on network nodes.
+5. Pick km thresholds that match your study extent.
+
+## Optional enrichment
+
+After connectivity, append river attributes if your edges carry them:
+
+```{r}
+#| eval: false
+
+source("R/add_ffr_attr.R")
+
+reach_enriched <- add_ffr_attr(
+  net_with_dams = net_with_dams,
+  reach_df = out_conn$reach_df,
+  edge_attr_cols = c("csi", "bas_name")  # use column names from your edges
+)
+```
+
+## Full pipeline reference
+
+For the GDW + FHReD + HydroRIVERS workflow, follow notebooks `0_setup.qmd` through `3_enrich_out_conn.qmd`.
