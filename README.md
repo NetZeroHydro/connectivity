@@ -8,8 +8,6 @@ This repository implements a **connectivity classification workflow** for future
 
 The outputs are intended for downstream multi-criteria analysis: one row per dam with neighbor IDs, distances, hop counts, cascade level, and optional river/dam attributes. This repo does **not** run the full MCDA model—it supplies the connectivity layer and enrichment steps only.
 
-<img width="510" height="334" alt="image" src="https://github.com/user-attachments/assets/e46caeaf-61f5-444b-89e2-8a52db614212" />
-
 ## Repository layout
 
 ```
@@ -75,7 +73,7 @@ Datasets used in the default pipeline (free online):
 - [Global Dam Watch (GDW)](https://www.globaldamwatch.org/) — existing hydropower projects
 - [Future Hydropower and Reservoir Data (FhRED)](https://www.globaldamwatch.org/directory) — planned projects ≥ 1 MW
 - [HydroRIVERS](https://www.hydrosheds.org/products/hydrorivers) — global river network (~500 m)
-- [Free-Flowing Rivers (FFR)](https://www.hydrosheds.org/applications/free-flowing-rivers) — reach attributes on HydroSHEDS network
+- [Free-Flowing Rivers (FFR)](https://figshare.com/articles/dataset/Mapping_the_world_s_free-flowing_rivers_data_set_and_technical_documentation/7688801) — reach attributes on HydroSHEDS network
 
 ## Reproducibility
 
@@ -103,6 +101,8 @@ sapply(pkgs, packageVersion)
 ```
 
 ### How to recreate the analysis
+
+<img width="510" height="334" alt="image" src="https://github.com/user-attachments/assets/e46caeaf-61f5-444b-89e2-8a52db614212" />
 
 1. **Install R** (4.5.2 or compatible) and the packages above (`install.packages()` for CRAN packages; `sf` may need system GDAL/GEOS libraries).
 
