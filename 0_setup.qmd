@@ -16,9 +16,9 @@ format: html
 
 # Overview
 
-Run this notebook once per session before notebooks 1–3. It loads packages, reads raw spatial data, and leaves named objects in your **global environment** (no intermediate `.rds` bundle).
+Run this notebook once per session before notebooks 1–3. It loads packages, reads raw spatial data, and leaves named objects in your **global environment**. 
 
-Edit the `paths` list below if your data are not under `/capstone/netzerohydro/data`. More detail on datasets: README and Bren technical documentation.
+Edit the `paths` list below if your data are not under `/capstone/netzerohydro/data`.
 
 # Paths
 
@@ -116,7 +116,7 @@ current_dams_gdw <- gdw %>%
   sf::st_set_crs(target_crs) %>%
   sf::st_transform(target_crs) %>%
   dplyr::mutate(
-    dam_id = as.character(.data$gdw_id),
+    dam_id = as.character(gdw_id),
     is_current_dam = TRUE
   )
 
@@ -128,14 +128,14 @@ future_dams_raw <- sf::st_read(paths$fhred_snapped) %>%
 
 future_dams_sf <- future_dams_raw %>%
   sf::st_as_sf(
-    coords = c("lon_cleane", "lat_cleane"),
+    coords = c("lon_cleane", "lat_cleane"), # fix columns if yours aren't broken from GIS
     crs = target_crs,
     remove = FALSE
   ) %>%
   sf::st_make_valid() %>%
   sf::st_transform(target_crs) %>%
   dplyr::mutate(
-    dam_id = as.character(.data$dam_id),
+    dam_id = as.character(dam_id),
     is_current_dam = FALSE
   )
 ```

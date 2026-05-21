@@ -1,32 +1,15 @@
 # =============================================================================
 # connectivity_from_network.R
 # =============================================================================
-# Connectivity for a blended dam network (v3): builds `reach_df` (one row per
-# dam node) plus a `debug` list of tibbles.
+# Connectivity for a blended dam network: builds `reach_df` (one row per
+# dam) plus a `debug` list of tibbles.
 #
-# Do not source connectivity_function.R in the same session; this file defines
-# connectivity_from_network() with v3 behavior.
 #
 # Prerequisites: directed `sfnetwork` with edge `weight` (metres) and `bb_id`;
 # blended nodes carry `dam_id` and `is_current_dam` (TRUE = current, FALSE =
 # future). Load: sfnetworks, igraph, dplyr, sf, tidygraph before sourcing.
 #
-# Contract summary (v3):
-# - Downstream “next” current dam: among future→current paths with finite
-#   dist_km > 0 and within threshold_downstream_km, **fewest trunk hops** (bb_id
-#   confluence graph), then **smallest river km**. `downstream_hops` = hop count.
-# - Upstream “next” current dam: same tier rule on current→future paths within
-#   threshold_upstream_km. `upstream_hops` = hop count.
-# - cascade_level = max(downstream_hops, upstream_hops) when **both**
-#   neighbors exist and both hop counts are finite; otherwise NA (“no cascade”).
-# - connectivity_category: cascade_classic when both sides are same-trunk
-#   (downstream_hops == 0 and upstream_hops == 0), then cascade1/2/+ from
-#   cascade_level, then FFR / downstream
-#   / upstream arms from min distances vs the same threshold_*_km used for pools.
-# - Thresholds are explicit km inputs: downstream/upstream/cascade.
 # =============================================================================
-
-#' Connectivity for a snapped dam network (`reach_df` + `debug`) — v3
 #'
 #' Builds directed river distances between **current** and **future** dam nodes
 #' on a blended `sfnetwork`, applies tiered upstream/downstream rules with km
@@ -36,38 +19,39 @@
 #' current dams and `FALSE` for future dams.
 #'
 #' **Edge weights:** column `weight` is treated as **metres** and converted to
-#' **km** for [igraph::distances()] (`as.numeric(weight) / 1000`). Edges must
-#' carry trunk id `bb_id` (confluence trunk graph).
+#' **km** for [igraph::distances()]. Edges must
+#' carry trunk id `bb_id` for the trunk confluence graph.
 #'
-#' **Downstream neighbor:** finite future→current path, `dist_km > 0`, at most
+#' **Downstream neighbor:** finite future→current path where `dist_km > 0` and at most
 #' `threshold_downstream_km`; pick **fewest trunk hops** then smallest `dist_km`.
 #'
-#' **Upstream neighbor:** finite current→future path, `dist_km > 0`, at most
+#' **Upstream neighbor:** finite current→future path, `dist_km > 0` and at most
 #' `threshold_upstream_km`; same tier rule.
 #'
 #' **`cascade_level`:** `pmax(downstream_hops, upstream_hops)` when both
-#' neighbors exist and both hop counts are non-NA; else `NA_integer_`.
+#' neighbors exist, both hop counts are non-NA, and both neighbor distances are
+#' at most `threshold_cascade_km`; else `NA_integer_`.
 #'
-#' **`connectivity_category` cascade classes:** `cascade_classic` when both
+#' **`connectivity_category` cascade levels:** `cascade_classic` when both
 #' neighbors are on the same trunk (`downstream_hops == 0` and
 #' `upstream_hops == 0`), then `cascade1`, `cascade2+` for max hops
-#' 1, 2 respectively.
+#' 1, 2+ respectively — only when both `min_distance_*_km` are within
+#' `threshold_cascade_km` (independent of up/down search caps).
 #'
-#' **`threshold_cascade_km`:** explicit km input (currently not used to pick a
-#' second neighbor; kept as explicit cascade threshold parameter).
+#' **`threshold_cascade_km`:** km cap for cascade classification only; does not
+#' change which up/down neighbors are chosen.
 #'
 #' @param net_with_dams Directed `sfnetwork` with edge `bb_id`, numeric edge
 #'   `weight` (metres), and blended node columns `dam_id` / `is_current_dam`.
 #' @param threshold_downstream_km Required km cap on downstream candidate paths.
 #' @param threshold_upstream_km Required km cap on upstream candidate paths.
-#' @param threshold_cascade_km Required cascade threshold in km (explicit input).
+#' @param threshold_cascade_km Required cascade threshold in km.
 #'
-#' @return Named list: `reach_df`, `debug` (intermediate tables), and
-#'   `threshold_used` (named numeric km actually applied).
+#' @return Named list: `reach_df`, `debug`, and `threshold_used`.
 #'
 #' @details
-#' Distances use `igraph::distances(..., mode = "out")`. `Inf` = no path; `0` =
-#' same vertex (excluded from candidate pools).
+#' Distances use `igraph::distances(..., mode = "out")`. Excludes: `Inf` = no path; `0` =
+#' same vertex (self)
 #'
 #' @examples
 #' \dontrun{
@@ -88,12 +72,7 @@ connectivity_from_network <- function(
     threshold_upstream_km,
     threshold_cascade_km) {
   
-  # Input checks + threshold capture
-  #
-  # Final return list always has: reach_df, debug, threshold_used.
-  # cascade_level rule later in SECTION 9:
-  #   - NA if either up/down dam link or hop value is missing
-  #   - otherwise max(downstream_hops, upstream_hops)
+  # Store thresholds for output
   
   threshold_used <- c(
     threshold_downstream_km = threshold_downstream_km,
@@ -102,7 +81,7 @@ connectivity_from_network <- function(
   )
   
   # =============================================================================
-  # SECTION 1 — flatten sfnetwork to node/edge tables
+  # SECTION 1 — Convert sfnetwork to node/edge tables
   #
   # INPUTS:
   #   - net_with_dams sfnetwork object
@@ -120,24 +99,28 @@ connectivity_from_network <- function(
     sf::st_as_sf() %>% # convert active node table to sf object
     sf::st_drop_geometry() %>% # remove POINT geometry; keep only attributes
     dplyr::as_tibble() %>% # standardize to tibble for dplyr pipelines
-    dplyr::mutate(node_id = dplyr::row_number()) # create stable node index used in pair tables
+    dplyr::mutate(node_id = dplyr::row_number()) # create node index used in pair tables
   
-  edges_tbl <- net_with_dams %>%
+  edges_tbl <- net_with_dams %>% # same process as above but with edges
     tidygraph::activate("edges") %>%
     sf::st_as_sf() %>%
     sf::st_drop_geometry() %>%
     dplyr::as_tibble()
   
-  weights_km <- as.numeric(edges_tbl$weight) / 1000
+  weights_km <- as.numeric(edges_tbl$weight) / 1000 # convert m to km
   
-  # One representative bb_id per node (needed for early exits and pair tables).
-  edge_from_node_bb <- edges_tbl %>% dplyr::select(node_id = .data$from, bb_id = .data$bb_id)
-  edge_to_node_bb <- edges_tbl %>% dplyr::select(node_id = .data$to, bb_id = .data$bb_id)
+  # node edge starts from
+  edge_from_node_bb <- edges_tbl %>% dplyr::select(node_id = "from", bb_id = "bb_id")
+  # node edge ends at
+  edge_to_node_bb <- edges_tbl %>% dplyr::select(node_id = "to", bb_id = "bb_id")
+  # all edge confluences
   edge_node_bb_incidence <- dplyr::bind_rows(edge_from_node_bb, edge_to_node_bb)
+  
+  # One bb_id per node used for early exits and pair tables.
   node_to_bb_lookup <- edge_node_bb_incidence %>%
-    dplyr::filter(!is.na(.data$bb_id)) %>%
-    dplyr::group_by(.data$node_id) %>%
-    dplyr::summarise(bb_id = dplyr::first(.data$bb_id), .groups = "drop")
+    dplyr::filter(!is.na(bb_id)) %>%
+    dplyr::group_by(node_id) %>%
+    dplyr::summarise(bb_id = dplyr::first(bb_id), .groups = "drop")
   
   # =============================================================================
   # SECTION 2 — split dam nodes into current vs future
@@ -152,23 +135,28 @@ connectivity_from_network <- function(
   # =============================================================================
   
   dam_nodes_tbl <- nodes_tbl %>% # begin with all nodes
-    dplyr::filter(!is.na(.data$dam_id)) %>% # keep only snapped dam nodes (non-missing id)
-    dplyr::mutate(dam_id = as.character(.data$dam_id)) # force character id for stable joins
+    dplyr::filter(!is.na(dam_id)) %>% # keep only snapped dam nodes (non-missing id)
+    dplyr::mutate(dam_id = as.character(dam_id)) # force character id for stable joins
   
-  current_dams_tbl <- dam_nodes_tbl %>%
-    dplyr::filter(.data$is_current_dam %in% TRUE) %>%
+  current_dams_tbl <- dam_nodes_tbl %>% # current dams table
+    dplyr::filter(is_current_dam %in% TRUE) %>%
     dplyr::select(node_id, dam_id, is_current_dam)
   
-  future_dams_tbl <- dam_nodes_tbl %>%
-    dplyr::filter(.data$is_current_dam %in% FALSE) %>%
+  future_dams_tbl <- dam_nodes_tbl %>% # future dams table
+    dplyr::filter(is_current_dam %in% FALSE) %>%
     dplyr::select(node_id, dam_id, is_current_dam)
   
-  current_nodes <- current_dams_tbl$node_id
+  current_nodes <- current_dams_tbl$node_id # igraph indices
   future_nodes <- future_dams_tbl$node_id
-  current_dam_ids <- current_dams_tbl$dam_id
+  current_dam_ids <- current_dams_tbl$dam_id # dam labels
   future_dam_ids <- future_dams_tbl$dam_id
-  n_cur <- length(current_nodes)
+  n_cur <- length(current_nodes) # lengths
   n_fut <- length(future_nodes)
+  
+  # Empty dam data sets stop check. 
+  # Stops the function call if missing either 
+  # current, future or both dams. 
+  # Returns empty reach_df instead of failing.
   
   if (n_fut == 0L) {
     return(list(
@@ -179,13 +167,12 @@ connectivity_from_network <- function(
   }
   
   if (n_cur == 0L) {
-    # No current dams: all connectivity NA; still return one row per future.
     future_trunks <- future_dams_tbl %>%
       dplyr::left_join(node_to_bb_lookup, by = c("node_id" = "node_id")) %>%
       dplyr::transmute(
-        future_dam_id = as.character(.data$dam_id),
-        future_node_id = .data$node_id,
-        bb_id = .data$bb_id
+        future_dam_id = as.character(dam_id),
+        future_node_id = node_id,
+        bb_id = bb_id
       )
     
     reach_future <- data.frame(
@@ -194,7 +181,7 @@ connectivity_from_network <- function(
       stringsAsFactors = FALSE
     ) %>%
       dplyr::left_join(
-        dplyr::transmute(future_trunks, dam_id = .data$future_dam_id, bb_id = .data$bb_id),
+        dplyr::transmute(future_trunks, dam_id = future_dam_id, bb_id = bb_id),
         by = "dam_id"
       ) %>%
       dplyr::mutate(
@@ -237,7 +224,7 @@ connectivity_from_network <- function(
     mode = "out" # follow edge direction from source downstream
   )
   
-  us_mat <- igraph::distances(
+  us_mat <- igraph::distances( # same process but for upstream
     net_with_dams,
     v = current_nodes,
     to = future_nodes,
@@ -246,7 +233,7 @@ connectivity_from_network <- function(
   )
   
   # =============================================================================
-  # SECTION 4 — melt matrices into row-wise pair tables
+  # SECTION 4 — convert matrices into pair tables
   #
   # INPUTS:
   #   - ds_mat / us_mat and node/dam id index vectors
@@ -259,37 +246,37 @@ connectivity_from_network <- function(
   ds_grid <- expand.grid(fut_idx = seq_len(n_fut), cur_idx = seq_len(n_cur)) # all (future, current) index pairs
   ds_grid$dist_km <- as.vector(ds_mat) # flatten matrix to align one distance per index-pair row
   
-  ds_dam_all <- ds_grid %>%
+  ds_dam_all <- ds_grid %>% # Every future dam paired with every current dam, with downstream river distance in km
     dplyr::mutate(
-      future_node_id = future_nodes[.data$fut_idx],
-      current_node_id = current_nodes[.data$cur_idx],
-      future_dam_id = future_dam_ids[.data$fut_idx],
-      current_dam_id = current_dam_ids[.data$cur_idx]
+      future_node_id = future_nodes[fut_idx],
+      current_node_id = current_nodes[cur_idx],
+      future_dam_id = future_dam_ids[fut_idx],
+      current_dam_id = current_dam_ids[cur_idx]
     ) %>%
     dplyr::select(
-      future_dam_id = .data$future_dam_id,
-      current_dam_id = .data$current_dam_id,
-      future_node_id = .data$future_node_id,
-      current_node_id = .data$current_node_id,
-      dist_km = .data$dist_km
+      future_dam_id = future_dam_id,
+      current_dam_id = current_dam_id,
+      future_node_id = future_node_id,
+      current_node_id = current_node_id,
+      dist_km = dist_km
     )
   
-  us_grid <- expand.grid(cur_idx = seq_len(n_cur), fut_idx = seq_len(n_fut))
+  us_grid <- expand.grid(cur_idx = seq_len(n_cur), fut_idx = seq_len(n_fut)) # same process but for upstream
   us_grid$dist_km <- as.vector(us_mat)
   
-  us_dam_all <- us_grid %>%
+  us_dam_all <- us_grid %>% # Every future dam paired with every current dam, with upstream river distance in km
     dplyr::mutate(
-      future_node_id = future_nodes[.data$fut_idx],
-      current_node_id = current_nodes[.data$cur_idx],
-      future_dam_id = future_dam_ids[.data$fut_idx],
-      current_dam_id = current_dam_ids[.data$cur_idx]
+      future_node_id = future_nodes[fut_idx],
+      current_node_id = current_nodes[cur_idx],
+      future_dam_id = future_dam_ids[fut_idx],
+      current_dam_id = current_dam_ids[cur_idx]
     ) %>%
     dplyr::select(
-      future_dam_id = .data$future_dam_id,
-      current_dam_id = .data$current_dam_id,
-      future_node_id = .data$future_node_id,
-      current_node_id = .data$current_node_id,
-      dist_km = .data$dist_km
+      future_dam_id = future_dam_id,
+      current_dam_id = current_dam_id,
+      future_node_id = future_node_id,
+      current_node_id = current_node_id,
+      dist_km = dist_km
     )
   
   # =============================================================================
@@ -304,27 +291,27 @@ connectivity_from_network <- function(
   #   - ds_dam_all, us_dam_all, future_trunks, current_trunks
   # =============================================================================
   
-  ds_dam_all <- ds_dam_all %>%
+  ds_dam_all <- ds_dam_all %>% # join bb_id to all downstream dam pairs
     dplyr::left_join(node_to_bb_lookup, by = c("future_node_id" = "node_id")) %>%
-    dplyr::rename(future_bb_id = .data$bb_id) %>%
+    dplyr::rename(future_bb_id = bb_id) %>%
     dplyr::left_join(node_to_bb_lookup, by = c("current_node_id" = "node_id")) %>%
-    dplyr::rename(current_bb_id = .data$bb_id)
+    dplyr::rename(current_bb_id = bb_id)
   
-  us_dam_all <- us_dam_all %>%
+  us_dam_all <- us_dam_all %>% # join bb_id to all upstream dam pairs
     dplyr::left_join(node_to_bb_lookup, by = c("future_node_id" = "node_id")) %>%
-    dplyr::rename(future_bb_id = .data$bb_id) %>%
+    dplyr::rename(future_bb_id = bb_id) %>%
     dplyr::left_join(node_to_bb_lookup, by = c("current_node_id" = "node_id")) %>%
-    dplyr::rename(current_bb_id = .data$bb_id)
+    dplyr::rename(current_bb_id = bb_id)
   
-  future_trunks <- future_dams_tbl %>%
+  future_trunks <- future_dams_tbl %>% # join bb_id to all future dams
     dplyr::left_join(node_to_bb_lookup, by = c("node_id" = "node_id")) %>%
-    dplyr::rename(future_node_id = .data$node_id, future_dam_id = .data$dam_id, bb_id = .data$bb_id) %>%
-    dplyr::select(.data$future_dam_id, .data$future_node_id, .data$bb_id)
+    dplyr::rename(future_node_id = node_id, future_dam_id = dam_id, bb_id = bb_id) %>%
+    dplyr::select(future_dam_id, future_node_id, bb_id)
   
-  current_trunks <- current_dams_tbl %>%
+  current_trunks <- current_dams_tbl %>% # join bb_id to all current dams
     dplyr::left_join(node_to_bb_lookup, by = c("node_id" = "node_id")) %>%
-    dplyr::rename(current_node_id = .data$node_id, current_dam_id = .data$dam_id, bb_id = .data$bb_id) %>%
-    dplyr::select(.data$current_dam_id, .data$current_node_id, .data$bb_id)
+    dplyr::rename(current_node_id = node_id, current_dam_id = dam_id, bb_id = bb_id) %>%
+    dplyr::select(current_dam_id, current_node_id, bb_id)
   
   # =============================================================================
   # SECTION 6 — build undirected trunk graph and hop lookup matrix
@@ -339,10 +326,10 @@ connectivity_from_network <- function(
   # =============================================================================
   
   junction_nodes <- unique(c(edges_tbl$from, edges_tbl$to)) # node ids that appear as any edge endpoint
-  bb_confluence_edges <- data.frame(from = character(0), to = character(0), stringsAsFactors = FALSE) # accumulator of bb_id-to-bb_id links
+  bb_confluence_edges <- data.frame(from = character(0), to = character(0), stringsAsFactors = FALSE) # all bb_id-to-bb_id links
   
   for (junction_node_id in junction_nodes) { # inspect each graph junction separately
-    bb_ids_at_node <- edge_node_bb_incidence %>% dplyr::filter(.data$node_id == junction_node_id) %>% dplyr::pull(.data$bb_id) # collect incident trunk ids
+    bb_ids_at_node <- edge_node_bb_incidence %>% dplyr::filter(node_id == junction_node_id) %>% dplyr::pull(bb_id) # collect incident trunk ids
     bb_ids_at_node <- unique(as.character(bb_ids_at_node)) # deduplicate and normalize type
     bb_ids_at_node <- bb_ids_at_node[!is.na(bb_ids_at_node) & nzchar(bb_ids_at_node)] # drop missing/blank bb ids
     if (length(bb_ids_at_node) >= 2) { # confluence only exists when 2+ trunks meet
@@ -358,15 +345,15 @@ connectivity_from_network <- function(
     }
   }
   
-  bb_confluence_edges <- unique(bb_confluence_edges)
-  bb_confluence_graph <- igraph::graph_from_data_frame(bb_confluence_edges, directed = FALSE)
-  bb_hop_distance_matrix <- igraph::distances(bb_confluence_graph, mode = "all")
+  bb_confluence_edges <- unique(bb_confluence_edges)  # list of touching trunks
+  bb_confluence_graph <- igraph::graph_from_data_frame(bb_confluence_edges, directed = FALSE) # graph of touching trunks
+  bb_hop_distance_matrix <- igraph::distances(bb_confluence_graph, mode = "all") # hop distance matrix
   if (igraph::vcount(bb_confluence_graph) > 0) {
     bb_vertex_names <- igraph::V(bb_confluence_graph)$name
     dimnames(bb_hop_distance_matrix) <- list(bb_vertex_names, bb_vertex_names)
   }
   
-  # Helper: hop matrix lookup vectorized
+  # Helper function looks up hops between all dams
   lookup_bb_hops_for_pairs <- function(future_bb_ids, current_bb_ids, hop_matrix) {
     future_bb_ids <- as.character(future_bb_ids)
     current_bb_ids <- as.character(current_bb_ids)
@@ -387,10 +374,6 @@ connectivity_from_network <- function(
   # =============================================================================
   # SECTION 7 — downstream candidate pool + tiered winner
   #
-  # IMPORTANT: this naturally does "same-trunk first" because same trunk is
-  # trunk_step_dist == 0. If no same-trunk candidate is within threshold, the
-  # next smallest hop tier (1, 2, ...) is used.
-  #
   # INPUTS:
   #   - ds_dam_all + threshold_downstream_km + bb_hop_distance_matrix
   # OUTPUTS:
@@ -403,41 +386,39 @@ connectivity_from_network <- function(
   # =============================================================================
   
   ds_reachable <- ds_dam_all %>% # start from all downstream direction pairs
-    dplyr::filter(is.finite(.data$dist_km) & .data$dist_km > 0) # keep only real reachable paths (exclude Inf/self 0)
+    dplyr::filter(is.finite(dist_km) & dist_km > 0) # keep only real reachable paths (exclude Inf/self 0)
   
-  ds_same_trunk <- ds_reachable %>%
-    dplyr::filter(.data$current_bb_id == .data$future_bb_id)
+  ds_same_trunk <- ds_reachable %>% # get same trunk pairs
+    dplyr::filter(current_bb_id == future_bb_id)
   
-  future_bb_ids_ds <- as.character(ds_reachable$future_bb_id)
-  current_bb_ids_ds <- as.character(ds_reachable$current_bb_id)
-  ds_reachable_with_steps <- ds_reachable %>%
+  future_bb_ids_ds <- as.character(ds_reachable$future_bb_id) # future downstream trunks
+  current_bb_ids_ds <- as.character(ds_reachable$current_bb_id) # current downstream trunks
+  ds_reachable_with_steps <- ds_reachable %>% # use helper function for hops downstream
     dplyr::mutate(trunk_step_dist = lookup_bb_hops_for_pairs(future_bb_ids_ds, current_bb_ids_ds, bb_hop_distance_matrix))
   
-  ds_within_cap <- ds_reachable_with_steps %>%
-    dplyr::filter(.data$dist_km <= threshold_downstream_km)
+  ds_within_cap <- ds_reachable_with_steps %>% # filter using threshold
+    dplyr::filter(dist_km <= threshold_downstream_km)
   
-  chosen_downstream <- ds_within_cap %>%
-    dplyr::group_by(.data$future_dam_id) %>%
-    # dplyr::coalesce puts unknown hop (NA) after all finite hop tiers.
+  chosen_downstream <- ds_within_cap %>% # chooses nearest neighbor
+    dplyr::group_by(future_dam_id) %>%
     dplyr::arrange(
-      dplyr::coalesce(.data$trunk_step_dist, .Machine$integer.max),
-      .data$dist_km
+      dplyr::coalesce(trunk_step_dist, .Machine$integer.max), # puts unknown hop (NA) after all finite hop tiers
+dist_km
     ) %>%
-    # dplyr::slice(1L) keeps the best row in each future dam group.
-    dplyr::slice(1L) %>%
+    dplyr::slice(1L) %>% # keep the best row in each future dam group
     dplyr::ungroup() %>%
     dplyr::transmute(
-      future_dam_id = .data$future_dam_id,
-      dam_id_down = .data$current_dam_id,
-      min_distance_downstream_km = .data$dist_km,
-      downstream_hops = .data$trunk_step_dist
+      future_dam_id = future_dam_id,
+      dam_id_down = current_dam_id,
+      min_distance_downstream_km = dist_km,
+      downstream_hops = trunk_step_dist
     )
   
-  downstream_summary <- ds_within_cap %>%
-    dplyr::group_by(.data$future_dam_id) %>%
+  downstream_summary <- ds_within_cap %>% # debug output
+    dplyr::group_by(future_dam_id) %>%
     dplyr::summarise(
       has_current_downstream = dplyr::n() > 0,
-      min_distance_downstream_km = ifelse(dplyr::n() > 0, min(.data$dist_km), NA_real_),
+      min_distance_downstream_km = ifelse(dplyr::n() > 0, min(dist_km), NA_real_),
       .groups = "drop"
     )
   
@@ -454,30 +435,29 @@ connectivity_from_network <- function(
   # =============================================================================
   
   us_reachable <- us_dam_all %>% # start from all upstream direction pairs
-    dplyr::filter(is.finite(.data$dist_km) & .data$dist_km > 0) # keep only valid directed paths
+    dplyr::filter(is.finite(dist_km) & dist_km > 0) # keep only valid directed paths
   
-  future_bb_ids_us <- as.character(us_reachable$future_bb_id)
-  current_bb_ids_us <- as.character(us_reachable$current_bb_id)
-  us_reachable_with_steps <- us_reachable %>%
+  future_bb_ids_us <- as.character(us_reachable$future_bb_id) # future upstream trunks
+  current_bb_ids_us <- as.character(us_reachable$current_bb_id) # current upstream trunks
+  us_reachable_with_steps <- us_reachable %>% # use helper function for hops upstream
     dplyr::mutate(trunk_step_dist = lookup_bb_hops_for_pairs(future_bb_ids_us, current_bb_ids_us, bb_hop_distance_matrix))
   
-  us_within_cap <- us_reachable_with_steps %>%
-    dplyr::filter(.data$dist_km <= threshold_upstream_km)
+  us_within_cap <- us_reachable_with_steps %>% # filter for within threshold
+    dplyr::filter(dist_km <= threshold_upstream_km)
   
   nearest_upstream <- us_within_cap %>%
-    dplyr::group_by(.data$future_dam_id) %>%
-    # Same tier rule as downstream: hops first, then shortest river km.
+    dplyr::group_by(future_dam_id) %>% # Same tier rule as downstream: hops first, then shortest river km.
     dplyr::arrange(
-      dplyr::coalesce(.data$trunk_step_dist, .Machine$integer.max),
-      .data$dist_km
+      dplyr::coalesce(trunk_step_dist, .Machine$integer.max),
+dist_km
     ) %>%
     dplyr::slice(1L) %>%
     dplyr::ungroup() %>%
     dplyr::transmute(
-      future_dam_id = .data$future_dam_id,
-      dam_id_up = .data$current_dam_id,
-      min_distance_upstream_km = .data$dist_km,
-      upstream_hops = .data$trunk_step_dist
+      future_dam_id = future_dam_id,
+      dam_id_up = current_dam_id,
+      min_distance_upstream_km = dist_km,
+      upstream_hops = trunk_step_dist
     )
   
   # =============================================================================
@@ -503,56 +483,65 @@ connectivity_from_network <- function(
     dplyr::left_join(chosen_downstream, by = c("dam_id" = "future_dam_id")) %>%
     dplyr::left_join(nearest_upstream, by = c("dam_id" = "future_dam_id")) %>%
     dplyr::mutate(
-      has_current_downstream = !is.na(.data$dam_id_down),
-      has_current_upstream = !is.na(.data$dam_id_up),
+      has_current_downstream = !is.na(dam_id_down),
+      has_current_upstream = !is.na(dam_id_up),
+      within_cascade_km = !is.na(dam_id_down) &
+        !is.na(dam_id_up) &
+        !is.na(min_distance_upstream_km) &
+        !is.na(min_distance_downstream_km) &
+min_distance_upstream_km <= threshold_cascade_km &
+min_distance_downstream_km <= threshold_cascade_km,
       cascade_level = dplyr::if_else(
-        !is.na(.data$dam_id_down) & !is.na(.data$dam_id_up) &
-          !is.na(.data$downstream_hops) & !is.na(.data$upstream_hops),
-        as.integer(pmax(.data$downstream_hops, .data$upstream_hops)),
+within_cascade_km &
+          !is.na(downstream_hops) & !is.na(upstream_hops),
+        as.integer(pmax(downstream_hops, upstream_hops)),
         NA_integer_
       ),
-      connectivity_category = dplyr::case_when(
-        !is.na(.data$cascade_level) &
-          .data$downstream_hops == 0L & .data$upstream_hops == 0L ~ "cascade_classic",
-        !is.na(.data$cascade_level) & .data$cascade_level == 1L ~ "cascade1",
-        !is.na(.data$cascade_level) & .data$cascade_level >= 2L ~ "cascade2+",
-        #!is.na(.data$cascade_level) & .data$cascade_level >= 3L ~ "cascade3+",
-        (is.na(.data$min_distance_upstream_km) | .data$min_distance_upstream_km > threshold_upstream_km) &
-          (is.na(.data$min_distance_downstream_km) | .data$min_distance_downstream_km > threshold_downstream_km) ~ "undammed",
-        !is.na(.data$min_distance_upstream_km) &
-          .data$min_distance_upstream_km <= threshold_upstream_km &
-          (is.na(.data$min_distance_downstream_km) | .data$min_distance_downstream_km > threshold_downstream_km) ~ "downstream",
-        !is.na(.data$min_distance_downstream_km) &
-          .data$min_distance_downstream_km <= threshold_downstream_km &
-          (is.na(.data$min_distance_upstream_km) | .data$min_distance_upstream_km > threshold_upstream_km) ~ "upstream",
+      connectivity_category = dplyr::case_when( # define connectivity categories
+within_cascade_km &
+          !is.na(cascade_level) &
+downstream_hops == 0L & upstream_hops == 0L ~ "cascade_classic",
+within_cascade_km &
+          !is.na(cascade_level) & cascade_level == 1L ~ "cascade1",
+within_cascade_km &
+          !is.na(cascade_level) & cascade_level >= 2L ~ "cascade2+",
+        #!is.na(cascade_level) & cascade_level >= 3L ~ "cascade3+", edit here if more cascade levels are desired
+        (is.na(min_distance_upstream_km) | min_distance_upstream_km > threshold_upstream_km) &
+          (is.na(min_distance_downstream_km) | min_distance_downstream_km > threshold_downstream_km) ~ "undammed",
+        !is.na(min_distance_upstream_km) &
+min_distance_upstream_km <= threshold_upstream_km &
+          (is.na(min_distance_downstream_km) | min_distance_downstream_km > threshold_downstream_km) ~ "downstream",
+        !is.na(min_distance_downstream_km) &
+min_distance_downstream_km <= threshold_downstream_km &
+          (is.na(min_distance_upstream_km) | min_distance_upstream_km > threshold_upstream_km) ~ "upstream",
         TRUE ~ NA_character_
       )
     ) %>%
-    dplyr::select(
-      dam_id = .data$dam_id,
-      dam_type = .data$dam_type,
-      bb_id = .data$bb_id,
-      has_current_downstream = .data$has_current_downstream,
-      min_distance_downstream_km = .data$min_distance_downstream_km,
-      dam_id_down = .data$dam_id_down,
-      downstream_hops = .data$downstream_hops,
-      has_current_upstream = .data$has_current_upstream,
-      min_distance_upstream_km = .data$min_distance_upstream_km,
-      dam_id_up = .data$dam_id_up,
-      upstream_hops = .data$upstream_hops,
-      cascade_level = .data$cascade_level,
-      connectivity_category = .data$connectivity_category
+    dplyr::select( # finalize output columns
+      dam_id = dam_id,
+      dam_type = dam_type,
+      bb_id = bb_id,
+      has_current_downstream = has_current_downstream,
+      min_distance_downstream_km = min_distance_downstream_km,
+      dam_id_down = dam_id_down,
+      downstream_hops = downstream_hops,
+      has_current_upstream = has_current_upstream,
+      min_distance_upstream_km = min_distance_upstream_km,
+      dam_id_up = dam_id_up,
+      upstream_hops = upstream_hops,
+      cascade_level = cascade_level,
+      connectivity_category = connectivity_category
     )
   
   # =============================================================================
-  # SECTION 10 — append current dam placeholder rows
+  # SECTION 10 — add current dam rows
   #
   # INPUTS:
   #   - current_dam_ids + current_trunks
   # OUTPUTS:
   #   - reach_current, then reach_df = bind_rows(reach_future, reach_current)
   # DEBUG OBJECTS:
-  #   - reach_df returned; current placeholders are not added separately to debug
+  #   - reach_df returned
   # =============================================================================
   
   reach_current <- data.frame( # mirror output schema for current dams
@@ -572,7 +561,7 @@ connectivity_from_network <- function(
     stringsAsFactors = FALSE # keep placeholders as character vectors
   )
   
-  reach_df <- dplyr::bind_rows(reach_future, reach_current)
+  reach_df <- dplyr::bind_rows(reach_future, reach_current) # final dataframe
   
   # =============================================================================
   # SECTION 11 — build decision_table audit sheet
@@ -587,14 +576,14 @@ connectivity_from_network <- function(
   
   decision_table <- data.frame(future_dam_id = future_dam_ids, stringsAsFactors = FALSE) %>% # start with one row per future dam id
     dplyr::left_join(
-      dplyr::rename(future_trunks, future_dam_id = .data$future_dam_id),
+      dplyr::rename(future_trunks, future_dam_id = future_dam_id),
       by = "future_dam_id"
     ) %>%
     dplyr::left_join(
       dplyr::rename(
         downstream_summary,
-        has_ds_in_cap = .data$has_current_downstream,
-        min_ds_km_in_cap_pool = .data$min_distance_downstream_km
+        has_ds_in_cap = has_current_downstream,
+        min_ds_km_in_cap_pool = min_distance_downstream_km
       ),
       by = "future_dam_id"
     ) %>%

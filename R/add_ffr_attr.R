@@ -110,14 +110,14 @@ add_ffr_attr <- function(
 
       bb_attr <- edges_tbl %>% # begin with edge attributes
         dplyr::select(bb_id, dplyr::all_of(keep_edge)) %>% # keep bb_id + requested columns
-        dplyr::filter(!is.na(.data$bb_id)) %>% # drop missing bb_id
-        dplyr::mutate(bb_id = as.character(.data$bb_id)) %>% # ensure bb_id is character for join
-        dplyr::group_by(.data$bb_id) %>% # group by bb_id
+        dplyr::filter(!is.na(bb_id)) %>% # drop missing bb_id
+        dplyr::mutate(bb_id = as.character(bb_id)) %>% # ensure bb_id is character for join
+        dplyr::group_by(bb_id) %>% # group by bb_id
         dplyr::slice(1L) %>% # keep one representative edge row per bb_id
         dplyr::ungroup() # drop grouping
 
       out <- out %>% # modify output
-        dplyr::mutate(bb_id = as.character(.data$bb_id)) %>% # ensure join key type matches
+        dplyr::mutate(bb_id = as.character(bb_id)) %>% # ensure join key type matches
         dplyr::left_join(bb_attr, by = "bb_id") # add edge attributes
 
     } # end keep_edge join
@@ -140,10 +140,10 @@ add_ffr_attr <- function(
       stop("future_extra must contain column `dam_id`.", call. = FALSE) # stop if missing
     } # end dam_id check
 
-    fe <- fe %>% dplyr::mutate(dam_id = as.character(.data$dam_id)) # force dam_id to character
+    fe <- fe %>% dplyr::mutate(dam_id = as.character(dam_id)) # force dam_id to character
 
     out <- out %>% # modify output
-      dplyr::mutate(dam_id = as.character(.data$dam_id)) %>% # ensure join key type matches
+      dplyr::mutate(dam_id = as.character(dam_id)) %>% # ensure join key type matches
       dplyr::left_join(fe, by = "dam_id", suffix = c("", ".future_extra")) # join dam-level attributes
 
     # If capacity_mw exists, set it to NA for current dams (future-only).
@@ -151,8 +151,8 @@ add_ffr_attr <- function(
       out <- out %>% # modify output
         dplyr::mutate( # mutate columns
           capacity_mw = dplyr::if_else( # keep for future, NA for current
-            .data$dam_type == "future", # condition
-            .data$capacity_mw, # keep value
+dam_type == "future", # condition
+capacity_mw, # keep value
             NA_real_ # set to NA for current
           ) # end if_else
         ) # end mutate

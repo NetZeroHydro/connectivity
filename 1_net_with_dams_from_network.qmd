@@ -46,11 +46,11 @@ main_riv_filter <- 70834639 # Mekong 41392598 # Amazon 60443230
 #| warning: false
 
 rivers_filtered <- world_rivers_ffr %>%
-  dplyr::filter(.data$ord_stra > ord_stra_min)
+  dplyr::filter(ord_stra > ord_stra_min)
 
 if (!is.null(main_riv_filter)) {
   rivers_filtered <- rivers_filtered %>%
-    dplyr::filter(as.numeric(.data$main_riv) == as.numeric(main_riv_filter))
+    dplyr::filter(as.numeric(main_riv) == as.numeric(main_riv_filter))
 }
 
 rivers_filtered <- suppressWarnings(sf::st_cast(rivers_filtered, "LINESTRING"))
@@ -66,7 +66,7 @@ if (nrow(rivers_filtered) == 0L) {
 #| message: false
 #| warning: false
 
-gdw_fhred_ref <- current_dams_gdw %>% dplyr::filter(.data$orig_src == "FHReD")
+gdw_fhred_ref <- current_dams_gdw %>% dplyr::filter(orig_src == "FHReD")
 
 n_fhred_before <- nrow(future_dams_sf)
 
@@ -97,25 +97,25 @@ cat("FHReD kept after de-duplication:", nrow(dams_future_fhred_clean), "\n")
 all_dams <- dplyr::bind_rows(
   dams_future_fhred_clean %>%
     dplyr::transmute(
-      dam_id = paste0("FHRED_", .data$dam_id),
+      dam_id = paste0("FHRED_", dam_id),
       is_current_dam,
       geometry = sf::st_geometry(.),
-      dam_name = .data$project_na,
-      capacity_mw = .data$capacity,
+      dam_name = project_na,
+      capacity_mw = capacity,
       continent,
       country,
-      main_basin = .data$major_basi,
+      main_basin = major_basi,
       main_river
     ),
   current_dams_gdw %>%
     dplyr::transmute(
-      dam_id = paste0("GDW_", .data$dam_id),
+      dam_id = paste0("GDW_", dam_id),
       is_current_dam,
       geometry = sf::st_geometry(.),
       country,
       main_basin,
-      dam_name = .data$dam_name,
-      capacity_mw = .data$power_mw
+      dam_name = dam_name,
+      capacity_mw = power_mw
     )
 ) %>%
   dplyr::select(-dplyr::any_of("geom")) %>%
@@ -145,7 +145,7 @@ nodes_tbl <- net_with_dams %>%
   dplyr::mutate(node_id = dplyr::row_number())
 
 dams_snapped <- nodes_tbl %>%
-  dplyr::filter(!is.na(.data$dam_id))
+  dplyr::filter(!is.na(dam_id))
 
 nearest_riv_idx <- sf::st_nearest_feature(dams_snapped, rivers_filtered)
 
@@ -217,7 +217,7 @@ leaflet::leaflet() %>%
     data = out$net_with_dams %>%
       tidygraph::activate("nodes") %>%
       sf::st_as_sf() %>%
-      dplyr::filter(!is.na(.data$dam_id), .data$is_current_dam %in% TRUE) %>%
+      dplyr::filter(!is.na(dam_id), is_current_dam %in% TRUE) %>%
       sf::st_transform(4326),
     radius = 4, color = "blue", fillColor = "blue", fillOpacity = 0.9, stroke = FALSE,
     popup = ~ paste0("Current dam<br>dam_id: ", dam_id)
@@ -226,7 +226,7 @@ leaflet::leaflet() %>%
     data = out$net_with_dams %>%
       tidygraph::activate("nodes") %>%
       sf::st_as_sf() %>%
-      dplyr::filter(!is.na(.data$dam_id), .data$is_current_dam %in% FALSE) %>%
+      dplyr::filter(!is.na(dam_id), is_current_dam %in% FALSE) %>%
       sf::st_transform(4326),
     radius = 4, color = "red", fillColor = "red", fillOpacity = 0.9, stroke = FALSE,
     popup = ~ paste0("Future dam<br>dam_id: ", dam_id)
