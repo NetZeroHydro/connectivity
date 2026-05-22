@@ -18,6 +18,7 @@ format: html
 
 - `dam_id` — unique ID (character)
 - `is_current_dam` — `TRUE` for existing dams, `FALSE` for future/planned dams
+- `dam_name` — optional; copied to `reach_df` (e.g. FHReD project name, GDW dam name)
 
 ## Minimal example
 

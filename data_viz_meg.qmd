@@ -20,8 +20,8 @@ str(out_enriched_v1)
 connectivity_cat_pal <- c("cascade_classic" = "#0e5faf",
                           "cascade1" = "#67A9CF",
                           "cascade2+" = "#D1E5F0",
-                          "upstream" = "#f7d35d",
-                          "downstream" = "#EF8A62", 
+                          "has_upstream_dam" = "#f7d35d",
+                          "has_downstream_dam" = "#EF8A62", 
                           "undammed" = "#B2182B")
 
 ```

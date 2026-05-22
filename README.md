@@ -4,9 +4,9 @@
 
 ## Purpose
 
-This repository implements a **connectivity classification workflow** for future hydropower dams on a directed river network. Given a blended network of existing (“current”) and planned (“future”) dam points snapped to river reaches, it assigns each future dam a **connectivity category** (e.g. cascade, upstream-only, downstream-only, undammed) based on directed river distance and trunk-hop relationships to the nearest current dams.
+This repository implements a **connectivity classification workflow** for future hydropower dams on a directed river network. Given a blended network of existing (“current”) and planned (“future”) dam points snapped to river reaches, it assigns each future dam a **connectivity category** (e.g. cascade, `has_upstream_dam`, `has_downstream_dam`, undammed) based on directed river distance and trunk-hop relationships to the nearest current dams.
 
-The outputs are intended for downstream multi-criteria analysis: one row per dam with neighbor IDs, distances, hop counts, cascade level, and optional river/dam attributes. This repo does **not** run the full MCDA model—it supplies the connectivity layer and enrichment steps only.
+The outputs are intended for downstream multi-criteria analysis: one row per dam with `dam_name` (FHReD project name or GDW dam name), neighbor IDs, distances, hop counts, cascade level, and optional river/dam attributes. This repo does **not** run the full MCDA model—it supplies the connectivity layer and enrichment steps only.
 
 ## Repository layout
 
@@ -37,11 +37,11 @@ The outputs are intended for downstream multi-criteria analysis: one row per dam
 
 **File:** `R/connectivity_from_network.R`
 
-Takes a directed `sfnetwork` with dams already blended onto the graph (`net_with_dams`). For each **future** dam node, it finds the nearest **current** dam upstream and downstream along the river network (within km thresholds), using trunk-hop count then river km as tie-breakers. It then assigns `cascade_level` and `connectivity_category` (e.g. `cascade_classic`, `cascade1`, `cascade2+`, `upstream`, `downstream`, `undammed`).
+Takes a directed `sfnetwork` with dams already blended onto the graph (`net_with_dams`). For each **future** dam node, it finds the nearest **current** dam upstream and downstream along the river network (within km thresholds), using trunk-hop count then river km as tie-breakers. It then assigns `cascade_level` and `connectivity_category` (e.g. `cascade_classic`, `cascade1`, `cascade2+`, `has_upstream_dam`, `has_downstream_dam`, `undammed`).
 
 **Produces:** A named list with:
 
-- `reach_df` — one row per dam (future + current placeholders) with distances, neighbor dam IDs, hop counts, and category
+- `reach_df` — one row per dam (future + current placeholders) with `dam_name`, distances, neighbor dam IDs, hop counts, and category
 - `debug` — intermediate tables for QA
 - `threshold_used` — km thresholds applied
 

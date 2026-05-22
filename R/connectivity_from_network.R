@@ -36,7 +36,9 @@
 #' neighbors are on the same trunk (`downstream_hops == 0` and
 #' `upstream_hops == 0`), then `cascade1`, `cascade2+` for max hops
 #' 1, 2+ respectively — only when both `min_distance_*_km` are within
-#' `threshold_cascade_km` (independent of up/down search caps).
+#' `threshold_cascade_km` (independent of up/down search caps). Otherwise
+#' `has_upstream_dam` when a current dam lies upstream of the future dam only,
+#' `has_downstream_dam` when a current dam lies downstream only, or `undammed`.
 #'
 #' **`threshold_cascade_km`:** km cap for cascade classification only; does not
 #' change which up/down neighbors are chosen.
@@ -47,7 +49,9 @@
 #' @param threshold_upstream_km Required km cap on upstream candidate paths.
 #' @param threshold_cascade_km Required cascade threshold in km.
 #'
-#' @return Named list: `reach_df`, `debug`, and `threshold_used`.
+#' @return Named list: `reach_df`, `debug`, and `threshold_used`. `reach_df`
+#'   includes `dam_name` when that column is present on blended dam nodes
+#'   (FHReD `project_name` / GDW `dam_name` from network build).
 #'
 #' @details
 #' Distances use `igraph::distances(..., mode = "out")`. Excludes: `Inf` = no path; `0` =
@@ -138,6 +142,14 @@ connectivity_from_network <- function(
     dplyr::filter(!is.na(dam_id)) %>% # keep only snapped dam nodes (non-missing id)
     dplyr::mutate(dam_id = as.character(dam_id)) # force character id for stable joins
   
+  dam_names_lookup <- if ("dam_name" %in% names(dam_nodes_tbl)) {
+    dam_nodes_tbl %>%
+      dplyr::distinct(dam_id, .keep_all = TRUE) %>%
+      dplyr::transmute(dam_id = dam_id, dam_name = as.character(dam_name))
+  } else {
+    data.frame(dam_id = character(), dam_name = character(), stringsAsFactors = FALSE)
+  }
+  
   current_dams_tbl <- dam_nodes_tbl %>% # current dams table
     dplyr::filter(is_current_dam %in% TRUE) %>%
     dplyr::select(node_id, dam_id, is_current_dam)
@@ -180,6 +192,7 @@ connectivity_from_network <- function(
       dam_type = rep("future", n_fut),
       stringsAsFactors = FALSE
     ) %>%
+      dplyr::left_join(dam_names_lookup, by = "dam_id") %>%
       dplyr::left_join(
         dplyr::transmute(future_trunks, dam_id = future_dam_id, bb_id = bb_id),
         by = "dam_id"
@@ -476,6 +489,7 @@ dist_km
     dam_type = rep("future", n_fut), # explicit type label for downstream filtering
     stringsAsFactors = FALSE # keep character columns as character, not factor
   ) %>%
+    dplyr::left_join(dam_names_lookup, by = "dam_id") %>%
     dplyr::left_join(
       dplyr::select(future_trunks, future_dam_id, bb_id),
       by = c("dam_id" = "future_dam_id")
@@ -510,15 +524,16 @@ within_cascade_km &
           (is.na(min_distance_downstream_km) | min_distance_downstream_km > threshold_downstream_km) ~ "undammed",
         !is.na(min_distance_upstream_km) &
 min_distance_upstream_km <= threshold_upstream_km &
-          (is.na(min_distance_downstream_km) | min_distance_downstream_km > threshold_downstream_km) ~ "downstream",
+          (is.na(min_distance_downstream_km) | min_distance_downstream_km > threshold_downstream_km) ~ "has_upstream_dam",
         !is.na(min_distance_downstream_km) &
 min_distance_downstream_km <= threshold_downstream_km &
-          (is.na(min_distance_upstream_km) | min_distance_upstream_km > threshold_upstream_km) ~ "upstream",
+          (is.na(min_distance_upstream_km) | min_distance_upstream_km > threshold_upstream_km) ~ "has_downstream_dam",
         TRUE ~ NA_character_
       )
     ) %>%
     dplyr::select( # finalize output columns
       dam_id = dam_id,
+      dam_name = dam_name,
       dam_type = dam_type,
       bb_id = bb_id,
       has_current_downstream = has_current_downstream,
@@ -547,6 +562,10 @@ min_distance_downstream_km <= threshold_downstream_km &
   reach_current <- data.frame( # mirror output schema for current dams
     dam_id = current_dam_ids, # current dam ids from node table
     dam_type = rep("current", n_cur), # mark these rows as current
+    stringsAsFactors = FALSE
+  ) %>%
+    dplyr::left_join(dam_names_lookup, by = "dam_id") %>%
+    dplyr::mutate(
     bb_id = current_trunks$bb_id, # attach trunk id where available
     has_current_downstream = rep(NA, n_cur), # not defined for current reference rows
     min_distance_downstream_km = rep(NA_real_, n_cur), # placeholder numeric
@@ -557,9 +576,8 @@ min_distance_downstream_km <= threshold_downstream_km &
     dam_id_up = rep(NA_character_, n_cur), # placeholder id
     upstream_hops = rep(NA_integer_, n_cur), # placeholder hops
     cascade_level = rep(NA_integer_, n_cur), # placeholder cascade level
-    connectivity_category = rep(NA_character_, n_cur), # placeholder category
-    stringsAsFactors = FALSE # keep placeholders as character vectors
-  )
+    connectivity_category = rep(NA_character_, n_cur) # placeholder category
+    )
   
   reach_df <- dplyr::bind_rows(reach_future, reach_current) # final dataframe
   
@@ -648,6 +666,7 @@ min_distance_downstream_km <= threshold_downstream_km &
 empty_reach_connectivity_df <- function() {
   data.frame(
     dam_id = character(),
+    dam_name = character(),
     dam_type = character(),
     bb_id = character(),
     has_current_downstream = logical(),
