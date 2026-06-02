@@ -16,20 +16,13 @@ The outputs are intended for downstream multi-criteria analysis: one row per dam
 ├── 2_run_connectivity_from_network.qmd  # Run connectivity classification
 ├── 3_enrich_out_conn.qmd            # Append FFR / river attributes to reach_df
 ├── alt_dam_data.qmd                 # Minimal guide: use connectivity on other data
+├── data_visualizations.qmd          # Generating images used in our documentation
 ├── LICENSE
 ├── R/
 │   ├── add_ffr_attr.R               # Enrich reach_df with edge/dam columns
 │   └── connectivity_from_network.R  # Core connectivity logic
 └── README.md
 ```
-
-| File | Role |
-|------|------|
-| `0_setup.qmd` | Defines editable `paths`, loads libraries, reads HydroRIVERS, FFR, GDW, and FHReD into the R session. |
-| `1_net_with_dams_from_network.qmd` | Filters rivers, de-duplicates FHReD vs GDW, blends dams into an `sfnetwork`, produces `out`. |
-| `2_run_connectivity_from_network.qmd` | Calls `connectivity_from_network()`; produces `out_conn` with `reach_df`. |
-| `3_enrich_out_conn.qmd` | Calls `add_ffr_attr()`; produces `out_enriched`. |
-| `alt_dam_data.qmd` | Short checklist for applying the functions to a custom network. |
 
 ## R functions
 
